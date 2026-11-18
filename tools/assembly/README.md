@@ -9,13 +9,12 @@ Each exact non-empty BAZIS designation is prepared once across the guide; subseq
 inventories reference the block containing that preparation. Empty codes are never
 merged. At the user's instruction, exact code equality is authoritative for identity.
 
-Mounting order combines actual BAZIS ancestry, geometric board orientation,
-numeric designation and local left-to-right position. A primary structural group
-is inferred from directly owned boards on several planes. Direct structural
-boards precede other groups and nested additions. This ordering does not inspect
-board/subgroup names such as Carcasa or Fals. Codes are compared numerically only
-within the same stage and role; they identify parts rather than assembly actions.
-Each step records its mounting_stage; insertion paths remain schematic.
+Mounting order sweeps side and horizontal boards together by their centers along
+the cabinet's local left-to-right axis, across subgroups. Back and face boards
+follow separately. At equal local X, orientation and numeric designation break
+ties. Names do not affect this ordering. Local centers are retained per step.
+The structural group inference is used for explosion presentation only, not to
+force every carcass board before shelves. Insertion paths remain schematic.
 
 The camera applies Y=-20 degrees followed by X=+20 degrees. Each sheet chooses A4
 portrait/landscape by which yields a larger fitted drawing. Geometry lines are

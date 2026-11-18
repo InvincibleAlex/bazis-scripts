@@ -107,9 +107,14 @@ def structural_parent(parts,nodes,root,reference_frame):
     return max(direct.items(),key=score)[0] if direct else root
 
 def mounting_stage(p,nodes,primary=None,reference_frame=None):
-    if p.get('parent')==primary:return 0
-    if primary in p.get('ancestors',[]):return 2
-    return 3 if role(p,nodes,reference_frame)=='face' else 1
+    r=role(p,nodes,reference_frame)
+    return 1 if r=='back' else 2 if r=='face' else 0
+
+def local_center(p,reference_frame=None):
+    frame=reference_frame or {};origin=frame.get('origin',[0,0,0])
+    basis=frame.get('axes',[[1,0,0],[0,1,0],[0,0,1]])
+    point=center(p)
+    return [sum((point[j]-origin[j])*axis[j] for j in range(3)) for axis in basis]
 
 def designation_order(p):
     value=str(p.get('designation') or '').strip()
@@ -127,15 +132,11 @@ def make_plan(report):
     for root,parts in groups.items():
         reference_frame=nodes.get(root,{}).get('frame')
         primary=structural_parent(parts,nodes,root,reference_frame)
-        def side_order(p):
-            across=(reference_frame or {}).get('axes',[[1,0,0]])[0]
-            return sum(center(p)[i]*across[i] for i in range(3))
-        sides=sorted([p for p in parts if role(p,nodes,reference_frame)=='side' and p.get('parent')==primary],key=lambda p:(designation_order(p),side_order(p)))
-        rank={p['id']:i for i,p in enumerate(sides)}
         def key(p):
             r=role(p,nodes,reference_frame);stage=mounting_stage(p,nodes,primary,reference_frame)
-            if r=='side':return (stage,0 if rank.get(p['id'])==0 else 2,designation_order(p),side_order(p),center(p)[1])
-            return (stage,{'horizontal':1,'other':3,'back':4,'face':6}[r],designation_order(p),side_order(p),center(p)[1])
+            position=local_center(p,reference_frame)
+            # Sweep side/horizontal boards together, regardless of subgroup depth.
+            return (stage,round(position[0],4),{'side':0,'horizontal':1,'back':2,'face':3}[r],designation_order(p),position[1],position[2])
         ordered=sorted(parts,key=key);steps=[]
         for i,p in enumerate(ordered):
             r=role(p,nodes,reference_frame);delta=[0,0,0]
@@ -145,8 +146,8 @@ def make_plan(report):
                 elif r=='back':delta=[0,0,-160]
                 elif r=='face':delta=[0,0,180]
                 else:delta=[0,120,0]
-            steps.append({'panel_id':p['id'],'offset_mm':delta,'role':r,'mounting_stage':mounting_stage(p,nodes,primary,reference_frame),'instruction':'Așază piesa de pornire.' if i==0 else 'Adu placa în poziția indicată. Verifică îmbinările înainte de fixare.'})
-        modules.append({'id':root,'name':nodes.get(root,{}).get('name','Corp'),'structural_group_id':primary,'order_source':'BAZIS hierarchy, board orientation, numeric designation and local left-to-right position; inferred assembly sequence','steps':steps})
+            steps.append({'panel_id':p['id'],'offset_mm':delta,'role':r,'mounting_stage':mounting_stage(p,nodes,primary,reference_frame),'center_module_local_mm':local_center(p,reference_frame),'instruction':'Așază piesa de pornire.' if i==0 else 'Adu placa în poziția indicată. Verifică îmbinările înainte de fixare.'})
+        modules.append({'id':root,'name':nodes.get(root,{}).get('name','Corp'),'structural_group_id':primary,'order_source':'local center left-to-right sweep of side/horizontal boards; back and face boards follow; numeric code breaks position ties','steps':steps})
     return {'schema':1,'status':'draft_unvalidated','modules':modules}
 
 VIEW_Y=math.radians(-20)
