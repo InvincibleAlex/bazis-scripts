@@ -207,6 +207,7 @@ def write_hierarchical(report,output,plan,sample_module=None):
         for module in selected:
             preparation_file=Path(temp)/f"prep-{module['id']}.pdf";c=canvas.Canvas(str(preparation_file),pagesize=(W,H))
             panels,fittings=views[module['id']]
+            picture(module['name']+' | Complet',[('',panels+fittings)])
             picture(module['name']+' | Explozie pe subansambluri',exploded_groups(module,panels,fittings,nodes))
             carcass=[p for p in panels if p.get('parent')==module.get('structural_group_id')]
             if carcass:picture(module['name']+' | Carcasă - explozie plăci',exploded_boards(carcass,fittings))

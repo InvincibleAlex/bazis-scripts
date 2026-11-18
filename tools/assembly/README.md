@@ -1,9 +1,9 @@
 # Assembly illustration prototype
 
 The default layout begins with the complete view and exploded main assemblies.
-Each cabinet/block then has its own consecutive sequence: explosion,
+Each cabinet/block then has its own consecutive sequence: completed view, explosion,
 board/hardware inventories, then preparation immediately followed by its matching
-assembly step, and completed cabinet. Only after that
+assembly step. Only after that
 does the next block begin. A final sheet shows the complete global assembly.
 Each exact non-empty BAZIS designation is prepared once across the guide; subsequent
 inventories reference the block containing that preparation. Empty codes are never
@@ -11,7 +11,10 @@ merged. At the user's instruction, exact code equality is authoritative for iden
 
 Mounting order sweeps side and horizontal boards together by their centers along
 the cabinet's local left-to-right axis, across subgroups. Back and face boards
-follow separately. At equal local X, orientation and numeric designation break
+follow separately. Face boards are ordered by increasing local Z, matching their
+insertion from positive local Z: deeper boards before the outer closure. This is
+a geometric priority, not a swept-volume collision solver. At equal local X,
+orientation and numeric designation break
 ties. Names do not affect this ordering. Local centers are retained per step.
 The structural group inference is used for explosion presentation only, not to
 force every carcass board before shelves. Insertion paths remain schematic.

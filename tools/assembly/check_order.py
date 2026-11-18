@@ -41,4 +41,13 @@ class MountingOrderChecks(unittest.TestCase):
         other=copy.deepcopy(shelf);other.update(id='shelf2',designation='2');shelf['designation']='10';report['panels'].append(other)
         ids=self.ids(report);self.assertLess(ids.index('shelf2'),ids.index('shelf'))
 
+    def test_inner_face_precedes_outer_closure_regardless_of_code(self):
+        report=self.fixture();door=next(p for p in report['panels'] if p['id']=='door')
+        door['bounds']={'min':[0,0,380],'max':[618,2500,398]};door['designation']='0'
+        inside=copy.deepcopy(door);inside.update(id='inner',name='Arbitrary inside piece',designation='999')
+        inside['bounds']={'min':[0,0,362],'max':[618,95,380]};report['panels'].append(inside)
+        ids=self.ids(report)
+        self.assertLess(ids.index('inner'),ids.index('door'))
+        self.assertLess(ids.index('right'),ids.index('inner'))
+
 if __name__=='__main__':unittest.main()

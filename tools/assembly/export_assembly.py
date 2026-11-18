@@ -136,6 +136,9 @@ def make_plan(report):
             r=role(p,nodes,reference_frame);stage=mounting_stage(p,nodes,primary,reference_frame)
             position=local_center(p,reference_frame)
             # Sweep side/horizontal boards together, regardless of subgroup depth.
+            # Face boards enter from positive local Z. Seat deeper boards first,
+            # before the outer face closes access. This is not collision solving.
+            if r=='face':return (stage,round(position[2],4),round(position[0],4),designation_order(p),position[1])
             return (stage,round(position[0],4),{'side':0,'horizontal':1,'back':2,'face':3}[r],designation_order(p),position[1],position[2])
         ordered=sorted(parts,key=key);steps=[]
         for i,p in enumerate(ordered):
@@ -147,7 +150,7 @@ def make_plan(report):
                 elif r=='face':delta=[0,0,180]
                 else:delta=[0,120,0]
             steps.append({'panel_id':p['id'],'offset_mm':delta,'role':r,'mounting_stage':mounting_stage(p,nodes,primary,reference_frame),'center_module_local_mm':local_center(p,reference_frame),'instruction':'Așază piesa de pornire.' if i==0 else 'Adu placa în poziția indicată. Verifică îmbinările înainte de fixare.'})
-        modules.append({'id':root,'name':nodes.get(root,{}).get('name','Corp'),'structural_group_id':primary,'order_source':'local center left-to-right sweep of side/horizontal boards; back and face boards follow; numeric code breaks position ties','steps':steps})
+        modules.append({'id':root,'name':nodes.get(root,{}).get('name','Corp'),'structural_group_id':primary,'order_source':'local-X sweep of side/horizontal boards; back boards follow; face boards by increasing local Z before outer closure; numeric code breaks ties','steps':steps})
     return {'schema':1,'status':'draft_unvalidated','modules':modules}
 
 VIEW_Y=math.radians(-20)
@@ -307,7 +310,7 @@ def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=
                 draw_scene(c,assembled+added,[q['id'] for q in added],step['offset_mm'],(45,60,W-90,H-155),mp,hardware=installed,hide_hidden=True)
                 assembled.extend(added)
                 c.showPage()
-            if mh:
+            if mh and before_step is None:
                 header(module['name']+' | Complet','',mp+mh)
                 draw_scene(c,mp,None,[0,0,0],(45,55,W-90,H-150),mp+mh,hardware=mh,hide_hidden=True)
                 c.showPage()
