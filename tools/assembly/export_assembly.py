@@ -81,16 +81,41 @@ def assign_hardware(hardware,panels):
         f['host_panel_id']=max(candidates,key=overlap)['id']
         f['host_method']='BAZIS links / max overlap' if f.get('connected_panel_uids') else 'bounds overlap - unvalidated'
 
-def role(p,nodes):
-    n=norm(p['name']); ancestry=' / '.join(norm(nodes[a]['name']) for a in p.get('ancestors',[]) if a in nodes)
-    dims=[b-a for a,b in zip(p['bounds']['min'],p['bounds']['max'])]
-    if 'usa' in n or 'usi' in ancestry or 'front' in n:return 'door'
-    if 'plint' in n:return 'plinth'
-    if 'spate' in n or (p['thickness']<=6 and dims[2]==min(dims)):return 'back'
-    if 'vertical' in n:return 'side'
-    if dims[0]==min(dims):return 'side'
-    if dims[1]==min(dims):return 'horizontal'
-    return 'other'
+def role(p,nodes,reference_frame=None):
+    """Geometric orientation only; object and ancestor names are not consulted."""
+    basis=(reference_frame or {}).get('axes',[[1,0,0],[0,1,0],[0,0,1]])
+    normal=(p.get('frame') or {}).get('axes',[])
+    if len(normal)==3:
+        axis=max(range(3),key=lambda i:abs(sum(normal[2][j]*basis[i][j] for j in range(3))))
+    else:
+        dims=[b-a for a,b in zip(p['bounds']['min'],p['bounds']['max'])]
+        axis=min(range(3),key=lambda i:dims[i])
+    if axis==0:return 'side'
+    if axis==1:return 'horizontal'
+    return 'back' if p['thickness']<=6 else 'face'
+
+def structural_parent(parts,nodes,root,reference_frame):
+    """Infer a structural group from direct boards on several planes."""
+    direct={}
+    for p in parts:direct.setdefault(p.get('parent'),[]).append(p)
+    def score(item):
+        parent,boards=item
+        planes={'face' if (r:=role(p,nodes,reference_frame))=='back' else r for p in boards}
+        chain=boards[0].get('ancestors',[])
+        depth=chain.index(parent)-chain.index(root) if parent in chain and root in chain else len(chain)
+        return (len(planes)>=2,-depth,len(boards))
+    return max(direct.items(),key=score)[0] if direct else root
+
+def mounting_stage(p,nodes,primary=None,reference_frame=None):
+    if p.get('parent')==primary:return 0
+    if primary in p.get('ancestors',[]):return 2
+    return 3 if role(p,nodes,reference_frame)=='face' else 1
+
+def designation_order(p):
+    value=str(p.get('designation') or '').strip()
+    if not value:return (1,())
+    return (0,tuple((0,int(part)) if part.isdigit() else (1,part.casefold())
+                    for part in re.split(r'(\d+)',value) if part))
 
 def make_plan(report):
     nodes={n['id']:n for n in report['nodes']};groups={}
@@ -100,26 +125,28 @@ def make_plan(report):
         groups.setdefault(root,[]).append(p)
     modules=[]
     for root,parts in groups.items():
+        reference_frame=nodes.get(root,{}).get('frame')
+        primary=structural_parent(parts,nodes,root,reference_frame)
         def side_order(p):
-            n=norm(p['name'])
-            return (0 if 'stanga' in n else 2 if 'dreapta' in n else 1,center(p)[0])
-        sides=sorted([p for p in parts if role(p,nodes)=='side'],key=side_order)
+            across=(reference_frame or {}).get('axes',[[1,0,0]])[0]
+            return sum(center(p)[i]*across[i] for i in range(3))
+        sides=sorted([p for p in parts if role(p,nodes,reference_frame)=='side' and p.get('parent')==primary],key=lambda p:(designation_order(p),side_order(p)))
         rank={p['id']:i for i,p in enumerate(sides)}
         def key(p):
-            r=role(p,nodes)
-            if r=='side':return (0 if rank[p['id']]==0 else 2,center(p)[0])
-            return ({'horizontal':1,'other':3,'back':4,'plinth':5,'door':6}[r],center(p)[1])
+            r=role(p,nodes,reference_frame);stage=mounting_stage(p,nodes,primary,reference_frame)
+            if r=='side':return (stage,0 if rank.get(p['id'])==0 else 2,designation_order(p),side_order(p),center(p)[1])
+            return (stage,{'horizontal':1,'other':3,'back':4,'face':6}[r],designation_order(p),side_order(p),center(p)[1])
         ordered=sorted(parts,key=key);steps=[]
         for i,p in enumerate(ordered):
-            r=role(p,nodes);delta=[0,0,0]
+            r=role(p,nodes,reference_frame);delta=[0,0,0]
             # Schematic assembly motion, deliberately not a collision solver.
             if i:
                 if r in ('side','horizontal'):delta=[180,0,0]
                 elif r=='back':delta=[0,0,-160]
-                elif r in ('door','plinth'):delta=[0,0,180]
+                elif r=='face':delta=[0,0,180]
                 else:delta=[0,120,0]
-            steps.append({'panel_id':p['id'],'offset_mm':delta,'role':r,'instruction':'Așază piesa de pornire.' if i==0 else 'Adu placa în poziția indicată. Verifică îmbinările înainte de fixare.'})
-        modules.append({'id':root,'name':nodes.get(root,{}).get('name','Corp'),'steps':steps})
+            steps.append({'panel_id':p['id'],'offset_mm':delta,'role':r,'mounting_stage':mounting_stage(p,nodes,primary,reference_frame),'instruction':'Așază piesa de pornire.' if i==0 else 'Adu placa în poziția indicată. Verifică îmbinările înainte de fixare.'})
+        modules.append({'id':root,'name':nodes.get(root,{}).get('name','Corp'),'structural_group_id':primary,'order_source':'BAZIS hierarchy, board orientation, numeric designation and local left-to-right position; inferred assembly sequence','steps':steps})
     return {'schema':1,'status':'draft_unvalidated','modules':modules}
 
 VIEW_Y=math.radians(-20)
