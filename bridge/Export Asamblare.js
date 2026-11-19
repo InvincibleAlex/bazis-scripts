@@ -75,6 +75,38 @@
    }
    return {source:'BAZIS panel.Cuts',complete:true,cuts:result};
   }
+  function calculatePanelHoles(panelRefs,articleByUid){
+   if(typeof NewHoleDrilling!=='function')throw Error('NewHoleDrilling indisponibil; gaurile nu pot fi confirmate.');
+   var calculator=NewHoleDrilling(),total=0;
+   panelRefs.forEach(function(entry){calculator.AddBody(entry.object);});
+   calculator.AddFasteners(Model);calculator.DrillHoles();
+   panelRefs.forEach(function(entry){
+    var p=entry.record,info=calculator.Bodies.FindBodyInfo(entry.object),list=get(info,'Holes'),n=get(list,'Count'),items=get(list,'Items');
+    if(typeof n!=='number'||n<0||n!==Math.floor(n))throw Error('Lista de gauri calculata indisponibila: '+p.designation);
+    total+=n;if(total>50000)throw Error('Prea multe gauri pentru export.');
+    p.holes=[];p.drilling_source='BAZIS NewHoleDrilling';
+    for(var i=0;i<n;i++){
+     var h=get(items||list,i),body=get(h,'Body'),fastener=get(h,'Fastener'),position=vec(get(h,'Position')),direction=vec(get(h,'Direction')),depth=get(h,'Depth');
+     if(get(body,'UID')!==p.uid||!position||!direction||typeof depth!=='number'||!isFinite(depth)||depth<0)throw Error('Date de gaurire invalide: '+p.designation);
+     if(Math.abs(direction.reduce(function(sum,v){return sum+v*v;},0)-1)>1e-5)throw Error('Directie de gaurire neconfirmata: '+p.designation);
+     // Native TDrilledHole Position/Direction are global. Confirm both endpoints
+     // remain in the receiving body's bounds before accepting them for drawing.
+     [0,depth].forEach(function(distance){
+      if(position.some(function(v,a){var q=v+distance*direction[a];return q<p.bounds.min[a]-.05||q>p.bounds.max[a]+.05;}))throw Error('Coordonate de gaurire neconfirmate: '+p.designation);
+     });
+     var fastenerUid=get(fastener,'UID'),article=articleByUid[String(fastenerUid)],local=null,localDirection=null;
+     if(typeof get(entry.object,'ToObject')==='function')local=vec(entry.object.ToObject(get(h,'Position')));
+     if(typeof get(entry.object,'NToObject')==='function')localDirection=vec(entry.object.NToObject(get(h,'Direction')));
+     if(!localDirection&&p.frame)localDirection=p.frame.axes.map(function(axis){return axis.reduce(function(sum,v,a){return sum+v*direction[a];},0);});
+     p.holes.push({source:'BAZIS NewHoleDrilling',panel_uid:p.uid,fastener_uid:fastenerUid,fastener_name:text(get(fastener,'Name')),
+      fastener_article_id:article?article.id:null,diameter_mm:get(h,'Diameter'),radius_mm:get(h,'Radius'),depth_mm:depth,drill_mode:get(h,'DrillMode'),
+      position_global_mm:position,direction_global:direction,position_panel_local_mm:local,direction_panel_local:localDirection,
+      coordinate_space_verified:true,contour_element_count:get(get(h,'Contour'),'Count')});
+     if(article&&article.connected_panel_uids.indexOf(p.uid)<0)article.connected_panel_uids.push(p.uid);
+    }
+   });
+   return {source:'BAZIS NewHoleDrilling',hole_count:total,panel_count:panelRefs.length,coordinate_space:'global',panel_assignment:'native Body reference'};
+  }
   function hardwareGeometry(root){
    var edges=[],todo=[root],visited=new WeakSet(),approximate=0,objectCount=0,shaftAxes=[],nativeComponents=0;
    while(todo.length){
@@ -129,7 +161,7 @@
   var raw=cp.execFileSync('powershell.exe',['-NoProfile','-STA','-EncodedCommand',Buffer.from(ps,'utf16le').toString('base64')],{encoding:'utf8',timeout:600000,windowsHide:true}).trim();
   if(!raw)return;
   var destination=Buffer.from(raw,'base64').toString('utf8');
-  var nodes=[],panels=[],hardware=[],seen=new WeakSet(),stack=[{o:Model,parent:null,ancestors:[],hidden:false}],visited=0;
+  var nodes=[],panels=[],hardware=[],panelRefs=[],articleByUid=Object.create(null),seen=new WeakSet(),stack=[{o:Model,parent:null,ancestors:[],hidden:false}],visited=0;
   while(stack.length){
    var item=stack.pop(),o=item.o;if(!o||seen.has(o))continue;seen.add(o);
    if(++visited>100000)throw Error('Prea multe obiecte.');
@@ -147,6 +179,14 @@
      try{var attached=o.FindFastenedObjects();for(var ci=0;attached&&ci<attached.length;ci++){var u=get(attached[ci],'UID');if(typeof u==='number'||typeof u==='string')connected.push(u);}}catch(ignore){}
     }
     hardware.push({id:id,uid:get(o,'UID'),parent:item.parent,ancestors:item.ancestors,name:name,article:name.indexOf('\r')>=0?name.split('\r').slice(1).join(' ').trim():'',designation:text(get(o,'Designation')),hidden:false,source_hidden:hidden,bounds:b||{min:null,max:null},edges:geometry.edges,approximate_components:geometry.approximate_components,native_edge_components:geometry.native_edge_components,insertion_axis:geometry.insertion_axis,connected_panel_uids:connected});
+    var articleRecord=hardware[hardware.length-1],memberStack=[o],membersSeen=new WeakSet(),membersCount=0;
+    while(memberStack.length){
+     var member=memberStack.pop();if(!member||membersSeen.has(member))continue;membersSeen.add(member);
+     if(++membersCount>10000)throw Error('Feronerie prea complexa pentru asocierea gaurilor.');
+     var memberUid=get(member,'UID');if(typeof memberUid==='number'||typeof memberUid==='string')articleByUid[String(memberUid)]=articleRecord;
+     var memberCount=get(member,'Count'),memberList=get(member,'Objects');
+     if(typeof memberCount==='number'&&memberCount>0&&memberCount<10000)for(var mi=0;mi<memberCount;mi++)memberStack.push(get(memberList||member,mi));
+    }
     continue;
    }
    nodes.push({id:id,parent:item.parent,name:name,designation:text(get(o,'Designation')),frame:objectFrame(o)});
@@ -187,12 +227,14 @@
      p.duplicate_signature={bands:bands,cuts:0,texture:typeof texture==='number'||typeof texture==='string'?texture:null};
     }
     panels.push(p);
+    panelRefs.push({object:o,record:p});
    }
    var count=get(o,'Count');
    if(typeof count==='number'&&count>=0&&count<=100000){var list=get(o,'Objects');for(var i=count-1;i>=0;i--)stack.push({o:get(list||o,i),parent:id,ancestors:item.ancestors.concat([id]),hidden:hidden});}
   }
   if(!panels.length)throw Error('Nu am gasit placi PAL/MDF/HDF/PFL/placaj.');
-  var report={schema:1,model:filename,nodes:nodes,panels:panels,hardware:hardware,geometry_source:'BAZIS contour line extrusion / global coordinates'};
+  var drilling=calculatePanelHoles(panelRefs,articleByUid);
+  var report={schema:1,model:filename,nodes:nodes,panels:panels,hardware:hardware,drilling:drilling,geometry_source:'BAZIS native edges / contour extrusion / NewHoleDrilling global coordinates'};
   var input=path.join(os.tmpdir(),'bazis-assembly-'+process.pid+'-'+Date.now()+'.json');
   fs.writeFileSync(input,JSON.stringify(report),'utf8');
   try{var result=JSON.parse(cp.execFileSync(cfg.python,[helper,'--input',input,'--output',destination],{encoding:'utf8',timeout:300000,windowsHide:true,maxBuffer:4*1024*1024}));

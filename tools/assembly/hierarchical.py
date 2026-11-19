@@ -174,6 +174,12 @@ def plate_view(p,fittings):
         # Put the longer face dimension along the horizontal display axis.
         plane.sort(key=lambda i:sizes[i],reverse=True)
         normal=transform([p]+fittings,lambda v:[v[plane[0]]-b['min'][plane[0]],v[plane[1]]-b['min'][plane[1]],v[thin]-b['min'][thin]])
+    # Preparation should show the drilled face. The native panel-local bore
+    # directions survive display transforms; don't infer a face from its name.
+    face_directions=[h.get('direction_panel_local') for h in p.get('holes',[])]
+    lower=sum(1 for d in face_directions if d and d[2]>.99)
+    upper=sum(1 for d in face_directions if d and d[2]<-.99)
+    if lower>upper:normal=transform(normal,lambda v:[v[0],-v[1],-v[2]])
     return transform(normal,lambda v:[v[0],v[2],-v[1]])
 
 def write_hierarchical(report,output,plan,sample_module=None):

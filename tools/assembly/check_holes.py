@@ -25,6 +25,14 @@ class HoleChecks(unittest.TestCase):
     def test_untrusted_or_invalid_hole_is_not_reconstructed(self):
         h=self.hole();h['source']='bounds inference';self.assertEqual(bore_edges(h),[])
         h=self.hole();h['diameter_mm']=0;self.assertEqual(bore_edges(h),[])
+    def test_preparation_turns_the_drilled_face_toward_the_viewer(self):
+        from hierarchical import plate_view
+        panel=dict(id='p',bounds={'min':[0,0,0],'max':[100,200,18]},edges=[],frame={'origin':[0,0,0],'axes':[[1,0,0],[0,1,0],[0,0,1]]})
+        normal=plate_view(panel,[])[0]
+        panel['holes']=[dict(direction_panel_local=[0,0,1])]
+        flipped=plate_view(panel,[])[0]
+        self.assertEqual(normal['frame']['axes'][2],[0,1,0])
+        self.assertEqual(flipped['frame']['axes'][2],[0,-1,0])
 
 
 if __name__=='__main__':unittest.main()

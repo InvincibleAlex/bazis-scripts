@@ -62,6 +62,18 @@ and `Documents/BazisMCP/tools/assembly/export_assembly.py`. It writes a PDF and
 a sibling `.assembly.json` containing the snapshot and proposed plan. No BLN is
 generated; native drawing-sheet creation is not verified.
 
+Hole assignment uses BAZIS `NewHoleDrilling`: all exported panels are added as
+bodies, model fasteners are added, then the calculation is queried per body.
+`TDrilledHole.Body` and `Fastener` identify the receiving panel and source fitting;
+diameter and depth are the calculated drilling values. Position and direction are
+global in the tested BAZIS 2022 runtime (verified on all 352 holes in 28 panels).
+Entry and end coordinates are checked against the native receiving-body bounds.
+The renderer draws circular bore mouth/depth contours from those parameters;
+opaque board faces still hide internal/rear edges. This is not a solid boolean
+rebuild of the board. Unsupported noncircular holes are not invented from bounds.
+Preparation views turn the panel over when most native face-bore directions
+enter from its lower local-Z face, so that the drilled face is visible.
+
 Composite fittings are detected using the documented `Block.IsFastener()`
 method; descendants of those objects are never exported as furniture boards.
 The atomic fitting record is retained in `report.hardware`. Plain fittings with
