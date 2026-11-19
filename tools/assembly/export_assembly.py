@@ -331,6 +331,8 @@ def main():
     sys.stdout.reconfigure(encoding='utf-8')
     ap=argparse.ArgumentParser();ap.add_argument('--input',required=True);ap.add_argument('--output',required=True);ap.add_argument('--plan');ap.add_argument('--sample-module');ap.add_argument('--layout',choices=['hierarchical','steps'],default='hierarchical');a=ap.parse_args()
     report=clean_report(json.loads(Path(a.input).read_text(encoding='utf-8-sig')));out=Path(a.output).resolve()
+    from holes import add_hole_edges
+    add_hole_edges(report)
     if out.suffix.lower()!='.pdf':raise ValueError('Destinația trebuie să fie PDF.')
     if not report.get('panels'):raise ValueError('Nu există plăci.')
     plan=json.loads(Path(a.plan).read_text(encoding='utf-8')) if a.plan else make_plan(report)

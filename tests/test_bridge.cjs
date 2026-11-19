@@ -67,6 +67,17 @@ env.first.Holes={Count:1,Items:[]};
 assert.equal(ok('get_object',{object_id:first}).native_holes.complete,false);
 delete env.first.Holes;
 assert.equal(ok('get_object',{object_id:first}).native_holes.available,false);
+// BAZIS's calculation assigns the receiving body and clips drilling depth.
+let drillBody;
+env.context.NewHoleDrilling=()=>({AddBody:o=>{drillBody=o;},AddFasteners:()=>{},DrillHoles:()=>{},Bodies:{FindBodyInfo:o=>({Holes:{Count:1,Items:[{Body:o,Fastener:env.nested,Diameter:5,Depth:14,Radius:2.5,DrillMode:2,Position:{x:1,y:2,z:0},Direction:{x:0,y:0,z:1}}]}})}});
+const beforeDrilling={...env.counters};
+const calculated=ok('get_panel_drilling',{object_ids:[first],model_token:token});
+assert.equal(drillBody,env.first);assert.equal(calculated.hole_count,1);
+assert.equal(calculated.panels[0].holes[0].body_uid,env.first.UID);
+assert.equal(calculated.panels[0].holes[0].fastener_uid,env.nested.UID);
+assert.equal(calculated.panels[0].holes[0].properties.Depth,14);
+assert.deepEqual(env.counters,beforeDrilling);
+error('get_panel_drilling',{object_ids:[first],model_token:'stale'},'MODEL_CHANGED');
 env.root.Objects.reverse();error('get_object',{object_id:first},'STALE_OBJECT');env.root.Objects.reverse();
 assert.equal(ok('get_object',{object_id:first}).thickness_mm,18);
 assert.equal(ok('list_objects',{limit:1,offset:1}).items.length,1);

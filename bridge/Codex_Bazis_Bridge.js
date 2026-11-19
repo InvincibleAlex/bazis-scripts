@@ -252,6 +252,38 @@
         return {total:filtered.length,offset:offset,items:items,next_offset:offset+items.length<filtered.length?offset+items.length:null};
     };
     handlers.get_object=function(p){var t=locate(p.object_id);return snapshot(t.obj,t.entry.indexes,true);};
+    handlers.get_panel_drilling=function(p){
+        requireModel();
+        if(p.model_token!==modelToken())fail('MODEL_CHANGED','Read get_model again');
+        var ts=targets(p);
+        requireFunction(typeof NewHoleDrilling!=='undefined'?NewHoleDrilling:null,'NewHoleDrilling');
+        var drilling=NewHoleDrilling(),panels=[],total=0;
+        requireFunction(prop(drilling,'AddBody'),'HoleDrilling.AddBody');
+        requireFunction(prop(drilling,'AddFasteners'),'HoleDrilling.AddFasteners');
+        requireFunction(prop(drilling,'DrillHoles'),'HoleDrilling.DrillHoles');
+        ts.forEach(function(t){drilling.AddBody(t.obj);});
+        drilling.AddFasteners(requireModel());drilling.DrillHoles();
+        var bodies=prop(drilling,'Bodies');requireFunction(prop(bodies,'FindBodyInfo'),'Bodies.FindBodyInfo');
+        ts.forEach(function(t){
+            var info=bodies.FindBodyInfo(t.obj),holes=prop(info,'Holes'),n=prop(holes,'Count'),items=prop(holes,'Items');
+            if(typeof n!=='number'||n<0||n!==Math.floor(n))fail('UNSUPPORTED','Native drilled-hole collection unavailable');
+            total+=n;if(total>50000)fail('LIMIT','More than 50000 calculated holes; request fewer panels');
+            var record={panel:snapshot(t.obj,t.entry.indexes,false),holes:[]};
+            for(var i=0;i<n;i++){
+                var hole=items?prop(items,i):prop(holes,i);if(!hole)fail('UNSUPPORTED','Native drilled hole unavailable');
+                var row={index:i,body_uid:identity(prop(hole,'Body')),fastener_uid:identity(prop(hole,'Fastener')),
+                    fastener_name:prop(prop(hole,'Fastener'),'Name'),properties:{},position_raw:vector(prop(hole,'Position')),direction_raw:vector(prop(hole,'Direction'))};
+                ['Diameter','Radius','Depth','DrillMode'].forEach(function(k){var v=prop(hole,k);if(scalar(v)&&typeof v!=='undefined')row.properties[k]=v;});
+                row.contour_element_count=prop(prop(hole,'Contour'),'Count');
+                if(row.position_raw&&typeof prop(t.obj,'ToGlobal')==='function')row.position_panel_to_global_candidate=vector(t.obj.ToGlobal(prop(hole,'Position')));
+                if(row.direction_raw&&typeof prop(t.obj,'NToGlobal')==='function')row.direction_panel_to_global_candidate=vector(t.obj.NToGlobal(prop(hole,'Direction')));
+                record.holes.push(row);
+            }
+            panels.push(record);
+        });
+        return {source:'BAZIS NewHoleDrilling / Bodies.FindBodyInfo',panel_count:panels.length,hole_count:total,panels:panels,
+            coordinate_note:'Calculated holes associated by BAZIS. Validate raw versus body-local coordinates before rendering.'};
+    };
     // Read existing native tessellation only. Never Build/Triangulate the model.
     handlers.read_geometry=function(p){
         requireModel();
