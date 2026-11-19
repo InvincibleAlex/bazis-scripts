@@ -81,6 +81,39 @@
         if(!obj || (entry.uid!==null ? identity(obj)!==entry.uid : obj!==entry.ref)) fail('STALE_OBJECT','Object order/identity changed; list objects again');
         return {obj:obj, entry:entry, id:id};
     }
+    function readNativeHoles(obj) {
+        var out={source:'BAZIS object.Holes',available:false,count:null,items:[],complete:false,
+            meaning:'Fastener hole definitions, not computed drilling in a receiving panel',
+            coordinate_note:'Position and Direction are preserved raw. ToGlobal results are candidates until their reference system is verified.'};
+        var list;
+        try {list=obj.Holes;}catch(e){out.error=message(e);return out;}
+        if(list===null || typeof list==='undefined')return out;
+        out.available=true;
+        var size=prop(list,'Count');if(typeof size!=='number')size=prop(list,'length');
+        if(typeof size!=='number'||!isFinite(size)||size<0||size!==Math.floor(size)){
+            try{out.collection_members=Object.getOwnPropertyNames(Object.getPrototypeOf(list)||list).slice(0,100);}catch(ignore){}
+            return out;
+        }
+        out.count=size;out.truncated=size>1000;out.complete=!out.truncated;
+        var items=prop(list,'Items');
+        if(!items)items=prop(list,'Holes');
+        for(var i=0;i<Math.min(size,1000);i++){
+            var hole=items?prop(items,i):prop(list,i),item={index:i,properties:{},position_raw:null,direction_raw:null};
+            if(!hole){item.error='Native hole item unavailable';out.complete=false;out.items.push(item);continue;}
+            ['Diameter','Depth','Radius','DrillMode'].forEach(function(k){var v=prop(hole,k);if(scalar(v)&&typeof v!=='undefined')item.properties[k]=v;});
+            var position=prop(hole,'Position'),direction=prop(hole,'Direction');
+            item.position_raw=vector(position);item.direction_raw=vector(direction);
+            item.contour_element_count=prop(prop(hole,'Contour'),'Count');
+            try{if(item.position_raw&&typeof prop(obj,'ToGlobal')==='function')item.position_to_global_candidate=vector(obj.ToGlobal(position));}catch(e){item.position_transform_error=message(e);}
+            try{if(item.direction_raw&&typeof prop(obj,'NToGlobal')==='function')item.direction_to_global_candidate=vector(obj.NToGlobal(direction));}catch(e){item.direction_transform_error=message(e);}
+            if(!item.position_raw||!item.direction_raw||typeof item.properties.Diameter!=='number'||typeof item.properties.Depth!=='number'){
+                out.complete=false;
+                try{item.native_members=Object.getOwnPropertyNames(Object.getPrototypeOf(hole)||hole).slice(0,100);}catch(ignore){}
+            }
+            out.items.push(item);
+        }
+        return out;
+    }
     function snapshot(obj, indexes, details) {
         var out={object_id:register(obj,indexes), parent_id:indexes.length>1?parentHandle(indexes):null,
                  name:prop(obj,'Name'), child_count:count(obj), position_parent_mm:vector(prop(obj,'Position'))};
@@ -91,6 +124,7 @@
         out.bounds_parent_mm={min:vector(prop(obj,'GMin')),max:vector(prop(obj,'GMax'))};
         out.bounds_global_mm={min:vector(prop(obj,'GabMin')),max:vector(prop(obj,'GabMax'))};
         if(details) {
+            out.native_holes=readNativeHoles(obj);
             out.edge_band_count=count(prop(obj,'Butts')); out.cut_count=count(prop(obj,'Cuts'));
             out.plastic_count=count(prop(obj,'Plastics'));
             out.methods={translate_global:typeof prop(obj,'TranslateGCS')==='function',rotate_global:typeof prop(obj,'RotateGCS')==='function',build:typeof prop(obj,'Build')==='function'};
