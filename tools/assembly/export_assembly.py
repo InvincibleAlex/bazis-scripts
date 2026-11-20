@@ -274,14 +274,19 @@ def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=
                 mp,mh=work_views[module['id']]
                 view_parts={p['id']:p for p in mp}
             else:view_parts=parts
-            for start in range(0,len(mp),19):
+            from inventory_layout import inventory_rows,draw_inventory_rows,draw_numbered_labels
+            pending=list(mp)
+            while pending:
                 header(module['name']+' | Inventar plăci','')
-                draw_scene(c,mp,None,[0,0,0],(35,75,350,400),mp+mh,hardware=mh,color_hardware=True,label_all=True)
-                c.setFillColorRGB(.1,.1,.1);c.setFont('Body',9)
-                for j,p in enumerate(mp[start:start+19]):
-                    yy=H-105-j*21;c.drawString(410,yy,f"{p['label']:02d}   {p['designation'] or p['id']}   {p['width']:g} × {p['height']:g} × {p['thickness']:g}")
-                    ref=p.get('preparation_in');name=p['name']+(f' | pregătire: {ref}' if ref and ref!=module['name'] else '')
-                    c.setFont('Body',8);c.drawString(430,yy-10,name[:80]);c.setFont('Body',9)
+                table_x=W*.49;table_width=W-table_x-30;available=H-155;batch=[];used=0
+                for row in inventory_rows(pending,table_width):
+                    if batch and (used+row[2]>available or len(batch)>=32):break
+                    batch.append(row);used+=row[2]
+                shown=[row[0] for row in batch];pending=pending[len(batch):]
+                figure=(30,65,table_x-50,H-155)
+                point=draw_scene(c,mp,None,[0,0,0],(figure[0]+35,figure[1],figure[2]-70,figure[3]),mp+mh,hardware=mh,color_hardware=True)
+                draw_numbered_labels(c,shown,point,figure)
+                draw_inventory_rows(c,batch,table_x,H-95,table_width)
                 c.showPage()
             if mh:
                 by_article={}
