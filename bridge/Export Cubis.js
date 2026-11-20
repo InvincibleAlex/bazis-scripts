@@ -7,6 +7,13 @@
         if (typeof Model === 'undefined' || !Model) throw new Error('Model nu este disponibil in acest context/eveniment.');
         function get(o, k) { try { return o[k]; } catch (_) { return undefined; } }
         function num(v) { return typeof v === 'number' && isFinite(v) && v > 0; }
+        // Use the same contour dimensions for all three tables. Snap only tiny
+        // differences from whole millimetres; retain other fractional dimensions.
+        // Raw native values remain in contur_bazis_brut for audit.
+        function exportDimension(v) {
+            var whole=Math.round(v);
+            return whole>0 && Math.abs(v-whole)<0.01 ? whole : v;
+        }
         function str(v) { return v === undefined || v === null ? '' : String(v); }
         function materialProbe(panel) {
             var material=get(panel,'Material'), out={
@@ -137,11 +144,15 @@
             var w = get(o, 'ContourWidth'), h = get(o, 'ContourHeight'), t = get(o, 'Thickness');
             var name = str(get(o, 'Name'));
             if (num(w) && num(h) && num(t) && /\bpal\b/i.test(str(get(o, 'MaterialName')).split('\r')[0])) {
+                var rawW=w, rawH=h;
+                w=exportDimension(w); h=exportDimension(h);
                 var edges=edgeData(o), fibre=fibreData(o), cubis=cubisDimensions(o,w,h,edges);
                 rows.push({
                 nr:rows.length + 1, nume:name, grup:item.parent,
                 pozitie:str(get(o, 'ArtPos')), material:str(get(o, 'MaterialName')),
                 contur_x_mm:w, contur_y_mm:h, grosime_mm:t, canturi:edges, fibra:fibre.cod,
+                contur_bazis_brut:{x_mm:rawW,y_mm:rawH},
+                normalizare_cote:{toleranta_mm:0.01,spre_mm_intreg:true,modificat:w!==rawW||h!==rawH},
                 detalii_fibra:fibre, cote_cubis:cubis, diagnostic_material:materialProbe(o), material_db:null
                 });
             }
@@ -234,7 +245,7 @@
         var report = {versiune:6, data:new Date().toISOString(), model:str(get(Model, 'Name')), context_eveniment:context,
             desen_bln: drawingName, nume_export: exportName, sursa_nume: drawingName ? 'BLN recent' : 'numele modelului (BLN neidentificat)',
             folder_export:folder, sursa_folder:folderSource, diagnostic_folder:folderError,
-            sursa_dimensiuni:'Contur X/Y original; cote Cubis = contur minus grosimea BAZIS a fiecarui cant aplicat, numai cand ClipPanel=true. Fara compensare suplimentara de prefrezare. Prima cota=X, a doua=Y; fara rotire.',
+            sursa_dimensiuni:'Contur X/Y BAZIS, normalizat la mm intreg numai pentru abateri sub 0.01 mm; valori native pastrate in contur_bazis_brut. Cote Cubis = contur normalizat minus grosimea BAZIS a fiecarui cant aplicat, numai cand ClipPanel=true. Komodo/Holver = contur normalizat fara scadere cant. Fara compensare suplimentara de prefrezare. Prima cota=X, a doua=Y; fara rotire.',
             numar_placi:rows.length, placi:rows};
         fs.writeFileSync(base + '.json', JSON.stringify(report, null, 2), {encoding:'utf8', flag:'wx'});
         var sides = ['Y_max','Y_min','X_min','X_max'];
