@@ -15,7 +15,7 @@ panel.Cuts={Count:1,Cuts:[{Name:'Canal test',Sign:'G=6',CutType:7,FrontSide:fals
 const hardware={Name:'Composite foot',IsFastener:()=>true,Count:1,Objects:[{...panel,Name:'Internal fitting board',MaterialName:'PAL, alb'}],GabMin:panel.GabMin,GabMax:panel.GabMax,FindFastenedObjects:()=>[{UID:42}]};
 const hinge={Name:'Hettich Balama tipar de g\u0103urire\r9073567',GabMin:{x:10,y:20,z:30},GabMax:{x:30,y:40,z:50}};
 const curvePoints=[{x:11,y:20,z:30},{x:10,y:21,z:30},{x:9,y:20,z:30},{x:10,y:19,z:30},{x:11,y:20,z:30}];
-const nativeFitting={UID:77,Name:'Native screw\rTEST',GabMin:{x:9,y:19,z:30},GabMax:{x:11,y:21,z:30},EdgesCount:1,Edges:[{Count:5,GVertices:curvePoints}],ToGlobal:()=>{throw Error('Native GVertices must not be transformed again');}};
+const nativeFitting={UID:77,Name:'Native screw\rTEST',GabMin:{x:9,y:19,z:30},GabMax:{x:11,y:21,z:30},EdgesCount:3,Edges:[{Count:1,GVertices:[{x:10,y:20,z:30}]},{Count:0,GVertices:[]},{Count:5,GVertices:curvePoints}],ToGlobal:()=>{throw Error('Native GVertices must not be transformed again');}};
 const hidden={Name:'Hidden group',Visible:false,Count:1,Objects:[{...panel,Name:'Hidden panel'}]};
 let report,alerts=[],model={Name:'Model',Count:1,Objects:[{Name:'M1',Count:5,Objects:[panel,hardware,hidden,hinge,nativeFitting]}]};
 const before=JSON.stringify(model),files=new Map();

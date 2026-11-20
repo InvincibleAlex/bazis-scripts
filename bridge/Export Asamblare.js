@@ -29,7 +29,10 @@
    try{
     for(var i=0;i<n;i++){
      var edge=get(list,i),count=get(edge,'Count'),vertices=get(edge,'GVertices');
-     if(typeof count!=='number'||count<2||count>20000||count!==Math.floor(count))return [];
+     if(typeof count!=='number'||count<0||count>20000||count!==Math.floor(count))return [];
+     // Native fittings include point-only construction edges before their
+     // circular polylines. They have no drawable segment; keep the other edges.
+     if(count<2)continue;
      var previous=null;
      for(var j=0;j<count;j++){
       var point=vec(get(vertices,j));if(!point)return [];
