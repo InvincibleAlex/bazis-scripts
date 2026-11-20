@@ -21,7 +21,7 @@ let report,alerts=[],model={Name:'Model',Count:1,Objects:[{Name:'M1',Count:5,Obj
 const before=JSON.stringify(model),files=new Map();
 const fakeFs={existsSync:()=>true,readFileSync:()=>JSON.stringify({python:'python'}),writeFileSync:(p,data)=>{files.set(p,data);if(p.endsWith('.json'))report=JSON.parse(data);},appendFileSync:(p,data)=>files.set(p,(files.get(p)||'')+data),unlinkSync:p=>files.delete(p),statSync:()=>({size:10})};
 let shellCalls=0;
-const cp={execFileSync:(exe,args)=>{assert.equal(exe,'powershell.exe','PDF generation must not block the native script');shellCalls++;return shellCalls===1?Buffer.from('C:/assembly.pdf').toString('base64'):'';}};
+const cp={execFileSync:(exe,args)=>{assert.equal(exe,'powershell.exe','PDF generation must not block the native script');shellCalls++;const command=Buffer.from(args[args.length-1],'base64').toString('utf16le');if(shellCalls===1)assert(command.includes('Start-Process')&&command.includes('$ack='),'terminal must start before the save dialog');return command.includes('SaveFileDialog')?Buffer.from('C:/assembly.pdf').toString('base64'):'';}};
 const NewHoleDrilling=()=>({AddBody:()=>{},AddFasteners:()=>{},DrillHoles:()=>{},Bodies:{FindBodyInfo:o=>({Holes:{Count:1,Items:[{Body:o,Fastener:nativeFitting,Diameter:5,Radius:2.5,Depth:5,DrillMode:2,Position:{x:10,y:20,z:35},Direction:{x:1,y:0,z:0}}]}})}});
 vm.runInNewContext(source,{Model:model,ModelFilename:'C:/test.b3d',Action:{},NewHoleDrilling,NewVector:(x,y,z)=>({x,y,z}),Buffer,WeakSet,Date,process:{pid:123},alert:s=>alerts.push(s),require:k=>k==='fs'?fakeFs:k==='child_process'?cp:k==='os'?{homedir:()=>'/home',tmpdir:()=>'/tmp'}:path});
 assert.equal(report.panels.length,2,'include temporarily hidden boards, exclude fitting internals');
@@ -56,7 +56,7 @@ assert.deepEqual(cut.trajectory.elements[0].start,{x:12,y:0});
 assert.deepEqual(cut.section.elements[0].end,{x:4,y:-6});
 assert.equal(cut.drawing_geometry_inferred,false);
 assert.equal(JSON.stringify(model),before,'read only');
-assert.equal(files.size,3,'worker owns the input, log and state until PDF generation completes');
+assert.equal(files.size,4,'worker owns the input, output path, log and state until PDF generation completes');
 assert([...files.entries()].some(([p,v])=>p.endsWith('.state')&&v==='ready'));
 assert([...files.entries()].some(([p,v])=>p.endsWith('.log')&&v.includes('BAZIS poate fi folosit')));
 assert.equal(shellCalls,2,'save dialog and terminal launch only');assert.equal(alerts.length,0);

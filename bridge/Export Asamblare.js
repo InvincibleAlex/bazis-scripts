@@ -2,13 +2,13 @@
 (function () {
  'use strict';
  var jobLog=null,jobState=null;
+ function text(v){return v==null?'':String(v);}
+ function progress(message){if(jobLog)fs.appendFileSync(jobLog,new Date().toLocaleTimeString()+' | '+message+'\n','utf8');}
  try {
   var fs=require('fs'),path=require('path'),os=require('os'),cp=require('child_process');
   function get(o,k){try{return o[k];}catch(e){return undefined;}}
-  function text(v){return v==null?'':String(v);}
   function vec(v){if(!v)return null;var a=[v.x,v.y,v.z];return a.every(function(n){return typeof n==='number'&&isFinite(n);})?a:null;}
   function positive(n){return typeof n==='number'&&isFinite(n)&&n>0;}
-  function progress(message){if(jobLog)fs.appendFileSync(jobLog,new Date().toLocaleTimeString()+' | '+message+'\n','utf8');}
   function objectFrame(o){
    if(typeof get(o,'ToGlobal')!=='function')return null;
    var origin=vec(o.ToGlobal(NewVector(0,0,0))),axes=[];if(!origin)return null;
@@ -156,25 +156,26 @@
   var cfg=JSON.parse(fs.readFileSync(path.join(os.homedir(),'.bazis-mcp','material-db-reader.json'),'utf8'));
   var helper=path.join(os.homedir(),'Documents','BazisMCP','tools','assembly','export_assembly.py');
   if(!fs.existsSync(helper))throw Error('Lipseste generatorul: '+helper);
-  if(typeof Model==='undefined'||!Model)throw Error('Deschideti un model.');
-  var filename=typeof ModelFilename==='string'?ModelFilename:text(get(Action,'ModelFilename'));
   var now=new Date();
   function pad(n){return ('0'+n).slice(-2);}
   var stamp=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+' '+pad(now.getHours())+'-'+pad(now.getMinutes())+'-'+pad(now.getSeconds());
   var suggested='Previzualizare montaj - '+stamp+'.pdf';
   var ps="$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.SaveFileDialog; $d.Title='Salveaza instructiunile de asamblare'; $d.Filter='PDF (*.pdf)|*.pdf'; $d.FileName=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+Buffer.from(suggested,'utf8').toString('base64')+"')); $d.OverwritePrompt=$true; if($d.ShowDialog() -eq 'OK'){[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.FileName))}; $d.Dispose()";
-  var raw=cp.execFileSync('powershell.exe',['-NoProfile','-STA','-EncodedCommand',Buffer.from(ps,'utf16le').toString('base64')],{encoding:'utf8',timeout:600000,windowsHide:true}).trim();
-  if(!raw)return;
-  var destination=Buffer.from(raw,'base64').toString('utf8');
   var input=path.join(os.tmpdir(),'bazis-assembly-'+process.pid+'-'+Date.now()+'.json');
   var job=input+'.job',consoleHelper=path.join(path.dirname(helper),'assembly_console.py');
   if(!fs.existsSync(consoleHelper))throw Error('Lipseste consola: '+consoleHelper);
-  jobLog=job+'.log';jobState=job+'.state';fs.writeFileSync(jobLog,'EXPORT ASAMBLARE\n','utf8');
+  jobLog=job+'.log';jobState=job+'.state';fs.writeFileSync(jobLog,'EXPORT ASAMBLARE\nPornire script. Se asteapta alegerea fisierului PDF...\n','utf8');
   function psValue(value){return "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+Buffer.from(value,'utf8').toString('base64')+"'))";}
-  var terminal="$Host.UI.RawUI.WindowTitle='BAZIS - Export asamblare'; [Console]::OutputEncoding=[Text.Encoding]::UTF8; & ("+psValue(cfg.python)+") '-u' ("+psValue(consoleHelper)+") '--job' ("+psValue(job)+") '--input' ("+psValue(input)+") '--output' ("+psValue(destination)+")";
+  var terminal="$Host.UI.RawUI.WindowTitle='BAZIS - Export asamblare'; [Console]::OutputEncoding=[Text.Encoding]::UTF8; Write-Host 'Pornire export BAZIS...'; & ("+psValue(cfg.python)+") '-u' ("+psValue(consoleHelper)+") '--job' ("+psValue(job)+") '--input' ("+psValue(input)+")";
   var encoded=Buffer.from(terminal,'utf16le').toString('base64');
-  var launch="$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NoExit','-EncodedCommand','"+encoded+"') -WindowStyle Normal";
+  var launch="$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NoExit','-EncodedCommand','"+encoded+"') -WindowStyle Normal; $ack="+psValue(job+'.opened')+"; $until=[DateTime]::UtcNow.AddSeconds(12); while(!(Test-Path -LiteralPath $ack) -and [DateTime]::UtcNow -lt $until){Start-Sleep -Milliseconds 100}; if(!(Test-Path -LiteralPath $ack)){throw 'Terminalul de progres nu a pornit. Citirea modelului nu a inceput.'}";
   cp.execFileSync('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(launch,'utf16le').toString('base64')],{encoding:'utf8',windowsHide:true,timeout:15000});
+  var raw=cp.execFileSync('powershell.exe',['-NoProfile','-STA','-EncodedCommand',Buffer.from(ps,'utf16le').toString('base64')],{encoding:'utf8',timeout:600000,windowsHide:true}).trim();
+  if(!raw){progress('Export anulat din dialogul de salvare.');fs.writeFileSync(jobState,'cancelled','utf8');return;}
+  var destination=Buffer.from(raw,'base64').toString('utf8');
+  fs.writeFileSync(job+'.output',destination,'utf8');
+  if(typeof Model==='undefined'||!Model)throw Error('Deschideti un model.');
+  var filename=typeof ModelFilename==='string'?ModelFilename:text(get(Action,'ModelFilename'));
   progress('Citire model: '+filename);
   var nodes=[],panels=[],hardware=[],panelRefs=[],articleByUid=Object.create(null),seen=new WeakSet(),stack=[{o:Model,parent:null,ancestors:[],hidden:false}],visited=0;
   while(stack.length){
