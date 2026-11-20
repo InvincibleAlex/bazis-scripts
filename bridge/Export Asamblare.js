@@ -160,7 +160,7 @@
   function pad(n){return ('0'+n).slice(-2);}
   var stamp=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+' '+pad(now.getHours())+'-'+pad(now.getMinutes())+'-'+pad(now.getSeconds());
   var suggested='Previzualizare montaj - '+stamp+'.pdf';
-  var ps="$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.SaveFileDialog; $d.Title='Salveaza instructiunile de asamblare'; $d.Filter='PDF (*.pdf)|*.pdf'; $d.FileName=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+Buffer.from(suggested,'utf8').toString('base64')+"')); $d.OverwritePrompt=$true; if($d.ShowDialog() -eq 'OK'){[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.FileName))}; $d.Dispose()";
+  var ps="$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.SaveFileDialog; $d.Title='Salveaza instructiunile de asamblare'; $d.Filter='PDF (*.pdf)|*.pdf'; $d.FileName=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+Buffer.from(suggested,'utf8').toString('base64')+"')); $d.OverwritePrompt=$true; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.ShowInTaskbar=$false; $owner.Opacity=0; $owner.Show(); if($d.ShowDialog($owner) -eq 'OK'){[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.FileName))}; $d.Dispose(); $owner.Dispose()";
   var input=path.join(os.tmpdir(),'bazis-assembly-'+process.pid+'-'+Date.now()+'.json');
   var job=input+'.job',consoleHelper=path.join(path.dirname(helper),'assembly_console.py');
   if(!fs.existsSync(consoleHelper))throw Error('Lipseste consola: '+consoleHelper);
@@ -169,7 +169,9 @@
   var terminal="$Host.UI.RawUI.WindowTitle='BAZIS - Export asamblare'; [Console]::OutputEncoding=[Text.Encoding]::UTF8; Write-Host 'Pornire export BAZIS...'; & ("+psValue(cfg.python)+") '-u' ("+psValue(consoleHelper)+") '--job' ("+psValue(job)+") '--input' ("+psValue(input)+")";
   var encoded=Buffer.from(terminal,'utf16le').toString('base64');
   var launch="$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NoExit','-EncodedCommand','"+encoded+"') -WindowStyle Normal; $ack="+psValue(job+'.opened')+"; $until=[DateTime]::UtcNow.AddSeconds(12); while(!(Test-Path -LiteralPath $ack) -and [DateTime]::UtcNow -lt $until){Start-Sleep -Milliseconds 100}; if(!(Test-Path -LiteralPath $ack)){throw 'Terminalul de progres nu a pornit. Citirea modelului nu a inceput.'}";
-  cp.execFileSync('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(launch,'utf16le').toString('base64')],{encoding:'utf8',windowsHide:true,timeout:15000});
+  // No inherited stdout/stderr pipes: the visible terminal outlives this
+  // launcher. Waiting for its pipe EOF would keep BAZIS blocked indefinitely.
+  cp.execFileSync('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(launch,'utf16le').toString('base64')],{stdio:'ignore',windowsHide:true,timeout:15000});
   var raw=cp.execFileSync('powershell.exe',['-NoProfile','-STA','-EncodedCommand',Buffer.from(ps,'utf16le').toString('base64')],{encoding:'utf8',timeout:600000,windowsHide:true}).trim();
   if(!raw){progress('Export anulat din dialogul de salvare.');fs.writeFileSync(jobState,'cancelled','utf8');return;}
   var destination=Buffer.from(raw,'base64').toString('utf8');
