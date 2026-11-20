@@ -1,7 +1,7 @@
 // BAZIS 2022 / Node 8. Read-only assembly illustration prototype.
 (function () {
  'use strict';
- var jobLog=null,jobState=null;
+ var jobLog=null,jobState=null,timer=null,nativeDone=false;
  function text(v){return v==null?'':String(v);}
  function progress(message){if(jobLog)fs.appendFileSync(jobLog,new Date().toLocaleTimeString()+' | '+message+'\n','utf8');}
  try {
@@ -179,8 +179,13 @@
   if(typeof Model==='undefined'||!Model)throw Error('Deschideti un model.');
   var filename=typeof ModelFilename==='string'?ModelFilename:text(get(Action,'ModelFilename'));
   progress('Citire model: '+filename);
+  var modelAtStart=Model;
   var nodes=[],panels=[],hardware=[],panelRefs=[],articleByUid=Object.create(null),seen=new WeakSet(),stack=[{o:Model,parent:null,ancestors:[],hidden:false}],visited=0;
-  while(stack.length){
+  function scanBatch(){
+   try{
+   if(Model!==modelAtStart)throw Error('Modelul a fost schimbat in timpul citirii. Reluati exportul.');
+   var batchCount=0,batchStart=Date.now();
+  while(stack.length&&batchCount++<20&&Date.now()-batchStart<60){
    var item=stack.pop(),o=item.o;if(!o||seen.has(o))continue;seen.add(o);
    if(++visited>100000)throw Error('Prea multe obiecte.');
    if(visited%100===0)progress('Citire: '+visited+' obiecte; '+panels.length+' placi; '+hardware.length+' articole de feronerie');
@@ -193,10 +198,10 @@
    var hole=/^(gaur|g\u0103ur|hole\b|linie de|caset\u0103 de)/i.test(name);
    var article=!isPanel&&!hole&&(/\r\s*\S/.test(name)||(!count&&/surub|\u0219urub|diblu|balama|glisier|picior|clem|m\u00e2ner|maner|suport|t\u0103lpici|talpici/i.test(name)));
    if(composite||article){
+    progress('Feronerie '+visited+': '+name.replace(/\r/g,' | ')+' - geometrie nativa');
     var b=validBounds(o),geometry=hardwareGeometry(o),connected=[];
-    if(typeof get(o,'FindFastenedObjects')==='function'){
-     try{var attached=o.FindFastenedObjects();for(var ci=0;attached&&ci<attached.length;ci++){var u=get(attached[ci],'UID');if(typeof u==='number'||typeof u==='string')connected.push(u);}}catch(ignore){}
-    }
+    // Do not search the entire model for every fitting. Receiving panels are
+    // assigned once below by native NewHoleDrilling, using Body/Fastener UIDs.
     hardware.push({id:id,uid:get(o,'UID'),parent:item.parent,ancestors:item.ancestors,name:name,article:name.indexOf('\r')>=0?name.split('\r').slice(1).join(' ').trim():'',designation:text(get(o,'Designation')),hidden:false,source_hidden:hidden,bounds:b||{min:null,max:null},edges:geometry.edges,approximate_components:geometry.approximate_components,native_edge_components:geometry.native_edge_components,insertion_axis:geometry.insertion_axis,connected_panel_uids:connected});
     var articleRecord=hardware[hardware.length-1],memberStack=[o],membersSeen=new WeakSet(),membersCount=0;
     while(memberStack.length){
@@ -211,6 +216,7 @@
    nodes.push({id:id,parent:item.parent,name:name,designation:text(get(o,'Designation')),frame:objectFrame(o)});
    // Only furniture boards, excluding panels used to model fittings.
    if(isPanel&&/\b(PAL|MDF|HDF|PFL|placaj|plywood)\b/i.test(material)){
+    progress('Placa '+visited+': '+text(get(o,'Designation'))+' | '+name);
     var p={id:id,uid:get(o,'UID'),parent:item.parent,ancestors:item.ancestors,name:name,designation:text(get(o,'Designation')),material:material,width:w,height:h,thickness:t,frame:objectFrame(o),bounds:{min:vec(get(o,'GabMin')),max:vec(get(o,'GabMax'))},edges:[],warnings:[],machining:panelMachining(o)};
     var contour=get(o,'Contour'),n=get(contour,'Count'),objects=get(contour,'Objects');
     if(typeof get(o,'ToGlobal')!=='function')throw Error('ToGlobal indisponibil pentru '+name);
@@ -251,6 +257,7 @@
    var count=get(o,'Count');
    if(typeof count==='number'&&count>=0&&count<=100000){var list=get(o,'Objects');for(var i=count-1;i>=0;i--)stack.push({o:get(list||o,i),parent:id,ancestors:item.ancestors.concat([id]),hidden:hidden});}
   }
+  if(stack.length){timer=setTimeout(scanBatch,20);return;}
   if(!panels.length)throw Error('Nu am gasit placi PAL/MDF/HDF/PFL/placaj.');
   progress('Citire terminata: '+panels.length+' placi; '+hardware.length+' articole de feronerie');
   progress('Calcul nativ al gaurilor in BAZIS...');
@@ -261,7 +268,19 @@
   fs.writeFileSync(input,JSON.stringify(report),'utf8');
   progress('Date pregatite. Generarea PDF continua in terminal; BAZIS poate fi folosit.');
   fs.writeFileSync(jobState,'ready','utf8');
+  nativeDone=true;Action.Finish();
+   }catch(e){nativeDone=true;reportError(e);try{Action.Finish();}catch(ignore){}}
+  }
+  if(!Action||typeof Action.Continue!=='function'||typeof Action.Finish!=='function'||typeof setTimeout!=='function')throw Error('Citirea pe loturi necesita Action.Continue/Finish si temporizator BAZIS.');
+  Action.OnFinish=function(){
+   if(timer!==null)clearTimeout(timer);
+   if(!nativeDone){nativeDone=true;progress('Citire oprita in BAZIS.');fs.writeFileSync(jobState,'cancelled','utf8');}
+  };
+  Action.Continue();timer=setTimeout(scanBatch,20);
  }catch(e){
+  reportError(e);
+ }
+ function reportError(e){
   try{progress('EROARE BAZIS: '+text(e.message||e));if(jobState)fs.writeFileSync(jobState,'error','utf8');}catch(ignore){}
   alert('Export asamblare nereusit: '+text(e.message||e));
  }

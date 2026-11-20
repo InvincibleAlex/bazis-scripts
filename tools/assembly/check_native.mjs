@@ -12,22 +12,28 @@ panel.Cuts={Count:1,Cuts:[{Name:'Canal test',Sign:'G=6',CutType:7,FrontSide:fals
  Params:{Depth:6,Offset:12,Offset2:0,Radius:2,Width:4,Angle:0,CutType:3},
  Trajectory:{Count:1,Objects:[line([12,0],[12,300])]},Contour:{Count:1,Objects:[line([0,0],[4,-6])]},
  CreateParams:()=>{throw Error('Reading must never create machining parameters');}}]};
-const hardware={Name:'Composite foot',IsFastener:()=>true,Count:1,Objects:[{...panel,Name:'Internal fitting board',MaterialName:'PAL, alb'}],GabMin:panel.GabMin,GabMax:panel.GabMax,FindFastenedObjects:()=>[{UID:42}]};
+let nativeLinkQueries=0;
+const hardware={Name:'Composite foot',IsFastener:()=>true,Count:1,Objects:[{...panel,Name:'Internal fitting board',MaterialName:'PAL, alb'}],GabMin:panel.GabMin,GabMax:panel.GabMax,FindFastenedObjects:()=>{nativeLinkQueries++;return [{UID:42}];}};
 const hinge={Name:'Hettich Balama tipar de g\u0103urire\r9073567',GabMin:{x:10,y:20,z:30},GabMax:{x:30,y:40,z:50}};
 const curvePoints=[{x:11,y:20,z:30},{x:10,y:21,z:30},{x:9,y:20,z:30},{x:10,y:19,z:30},{x:11,y:20,z:30}];
 const nativeFitting={UID:77,Name:'Native screw\rTEST',GabMin:{x:9,y:19,z:30},GabMax:{x:11,y:21,z:30},EdgesCount:3,Edges:[{Count:1,GVertices:[{x:10,y:20,z:30}]},{Count:0,GVertices:[]},{Count:5,GVertices:curvePoints}],ToGlobal:()=>{throw Error('Native GVertices must not be transformed again');}};
 const hidden={Name:'Hidden group',Visible:false,Count:1,Objects:[{...panel,Name:'Hidden panel'}]};
 let report,alerts=[],model={Name:'Model',Count:1,Objects:[{Name:'M1',Count:5,Objects:[panel,hardware,hidden,hinge,nativeFitting]}]};
+for(let i=0;i<40;i++)model.Objects[0].Objects.push({Name:'Dummy '+i,Count:0});model.Objects[0].Count=model.Objects[0].Objects.length;
 const before=JSON.stringify(model),files=new Map();
 const fakeFs={existsSync:()=>true,readFileSync:()=>JSON.stringify({python:'python'}),writeFileSync:(p,data)=>{files.set(p,data);if(p.endsWith('.json'))report=JSON.parse(data);},appendFileSync:(p,data)=>files.set(p,(files.get(p)||'')+data),unlinkSync:p=>files.delete(p),statSync:()=>({size:10})};
 let shellCalls=0;
 const cp={execFileSync:(exe,args,options)=>{assert.equal(exe,'powershell.exe','PDF generation must not block the native script');shellCalls++;const command=Buffer.from(args[args.length-1],'base64').toString('utf16le');if(shellCalls===1){assert(command.includes('Start-Process')&&command.includes('$ack='),'terminal must start before the save dialog');assert.equal(options.stdio,'ignore','long-lived console must never inherit native blocking pipes');}return command.includes('SaveFileDialog')?Buffer.from('C:/assembly.pdf').toString('base64'):'';}};
 const NewHoleDrilling=()=>({AddBody:()=>{},AddFasteners:()=>{},DrillHoles:()=>{},Bodies:{FindBodyInfo:o=>({Holes:{Count:1,Items:[{Body:o,Fastener:nativeFitting,Diameter:5,Radius:2.5,Depth:5,DrillMode:2,Position:{x:10,y:20,z:35},Direction:{x:1,y:0,z:0}}]}})}});
-vm.runInNewContext(source,{Model:model,ModelFilename:'C:/test.b3d',Action:{},NewHoleDrilling,NewVector:(x,y,z)=>({x,y,z}),Buffer,WeakSet,Date,process:{pid:123},alert:s=>alerts.push(s),require:k=>k==='fs'?fakeFs:k==='child_process'?cp:k==='os'?{homedir:()=>'/home',tmpdir:()=>'/tmp'}:path});
+const timers=[];let scheduled=0,continued=0,finished=0;const action={Continue:()=>continued++,Finish:()=>{finished++;action.OnFinish?.();}};
+vm.runInNewContext(source,{Model:model,ModelFilename:'C:/test.b3d',Action:action,setTimeout:fn=>{timers.push(fn);return ++scheduled;},clearTimeout:()=>{},NewHoleDrilling,NewVector:(x,y,z)=>({x,y,z}),Buffer,WeakSet,Date,process:{pid:123},alert:s=>alerts.push(s),require:k=>k==='fs'?fakeFs:k==='child_process'?cp:k==='os'?{homedir:()=>'/home',tmpdir:()=>'/tmp'}:path});
+assert.equal(report,undefined,'native script must yield before scanning');
+while(timers.length)timers.shift()();
+assert(scheduled>=3,'scan yields between batches');assert.equal(continued,1);assert.equal(finished,1);assert.equal(nativeLinkQueries,0);
 assert.equal(report.panels.length,2,'include temporarily hidden boards, exclude fitting internals');
 assert.equal(report.hardware.length,3,'keep composite fitting atomic and read plain hinge with drilling in its name');
 assert.equal(report.hardware[0].edges.length,12,'extract composite internal geometry once');
-assert.deepEqual(report.hardware[0].connected_panel_uids,[42]);
+assert.deepEqual(report.hardware[0].connected_panel_uids,[],'no per-fitting global search; drilling adds native host links');
 assert.equal(report.hardware[1].article,'9073567');
 assert.equal(report.hardware[1].edges.length,12,'bounds fallback for CAD leaf');
 assert.equal(report.hardware[2].edges.length,4,'preserve native curve vertices instead of a bounding box');
