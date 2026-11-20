@@ -1,12 +1,14 @@
 // BAZIS 2022 / Node 8. Read-only assembly illustration prototype.
 (function () {
  'use strict';
+ var jobLog=null,jobState=null;
  try {
   var fs=require('fs'),path=require('path'),os=require('os'),cp=require('child_process');
   function get(o,k){try{return o[k];}catch(e){return undefined;}}
   function text(v){return v==null?'':String(v);}
   function vec(v){if(!v)return null;var a=[v.x,v.y,v.z];return a.every(function(n){return typeof n==='number'&&isFinite(n);})?a:null;}
   function positive(n){return typeof n==='number'&&isFinite(n)&&n>0;}
+  function progress(message){if(jobLog)fs.appendFileSync(jobLog,new Date().toLocaleTimeString()+' | '+message+'\n','utf8');}
   function objectFrame(o){
    if(typeof get(o,'ToGlobal')!=='function')return null;
    var origin=vec(o.ToGlobal(NewVector(0,0,0))),axes=[];if(!origin)return null;
@@ -161,10 +163,21 @@
   var raw=cp.execFileSync('powershell.exe',['-NoProfile','-STA','-EncodedCommand',Buffer.from(ps,'utf16le').toString('base64')],{encoding:'utf8',timeout:600000,windowsHide:true}).trim();
   if(!raw)return;
   var destination=Buffer.from(raw,'base64').toString('utf8');
+  var input=path.join(os.tmpdir(),'bazis-assembly-'+process.pid+'-'+Date.now()+'.json');
+  var job=input+'.job',consoleHelper=path.join(path.dirname(helper),'assembly_console.py');
+  if(!fs.existsSync(consoleHelper))throw Error('Lipseste consola: '+consoleHelper);
+  jobLog=job+'.log';jobState=job+'.state';fs.writeFileSync(jobLog,'EXPORT ASAMBLARE\n','utf8');
+  function psValue(value){return "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+Buffer.from(value,'utf8').toString('base64')+"'))";}
+  var terminal="$Host.UI.RawUI.WindowTitle='BAZIS - Export asamblare'; [Console]::OutputEncoding=[Text.Encoding]::UTF8; & ("+psValue(cfg.python)+") '-u' ("+psValue(consoleHelper)+") '--job' ("+psValue(job)+") '--input' ("+psValue(input)+") '--output' ("+psValue(destination)+")";
+  var encoded=Buffer.from(terminal,'utf16le').toString('base64');
+  var launch="$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NoExit','-EncodedCommand','"+encoded+"') -WindowStyle Normal";
+  cp.execFileSync('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(launch,'utf16le').toString('base64')],{encoding:'utf8',windowsHide:true,timeout:15000});
+  progress('Citire model: '+filename);
   var nodes=[],panels=[],hardware=[],panelRefs=[],articleByUid=Object.create(null),seen=new WeakSet(),stack=[{o:Model,parent:null,ancestors:[],hidden:false}],visited=0;
   while(stack.length){
    var item=stack.pop(),o=item.o;if(!o||seen.has(o))continue;seen.add(o);
    if(++visited>100000)throw Error('Prea multe obiecte.');
+   if(visited%100===0)progress('Citire: '+visited+' obiecte; '+panels.length+' placi; '+hardware.length+' articole de feronerie');
    var id='p'+visited,name=text(get(o,'Name')),hidden=item.hidden||get(o,'Visible')===false;
    var material=text(get(o,'MaterialName')).split('\r')[0],w=get(o,'ContourWidth'),h=get(o,'ContourHeight'),t=get(o,'Thickness');
    var isPanel=positive(w)&&positive(h)&&positive(t),count=get(o,'Count');
@@ -233,13 +246,17 @@
    if(typeof count==='number'&&count>=0&&count<=100000){var list=get(o,'Objects');for(var i=count-1;i>=0;i--)stack.push({o:get(list||o,i),parent:id,ancestors:item.ancestors.concat([id]),hidden:hidden});}
   }
   if(!panels.length)throw Error('Nu am gasit placi PAL/MDF/HDF/PFL/placaj.');
+  progress('Citire terminata: '+panels.length+' placi; '+hardware.length+' articole de feronerie');
+  progress('Calcul nativ al gaurilor in BAZIS...');
   var drilling=calculatePanelHoles(panelRefs,articleByUid);
+  progress('Calcul gauri terminat: '+(drilling.hole_count||0)+' gauri');
   var report={schema:1,model:filename,nodes:nodes,panels:panels,hardware:hardware,drilling:drilling,geometry_source:'BAZIS native edges / contour extrusion / NewHoleDrilling global coordinates'};
-  var input=path.join(os.tmpdir(),'bazis-assembly-'+process.pid+'-'+Date.now()+'.json');
+  progress('Pregatire date pentru PDF...');
   fs.writeFileSync(input,JSON.stringify(report),'utf8');
-  try{var result=JSON.parse(cp.execFileSync(cfg.python,[helper,'--input',input,'--output',destination],{encoding:'utf8',timeout:300000,windowsHide:true,maxBuffer:4*1024*1024}));
-   if(!result.ok||!fs.statSync(destination).size)throw Error('PDF neconfirmat.');
-   alert('ASAMBLARE - PROTOTIP\nPDF: '+destination+'\nPlaci: '+result.panels+'; pagini: '+result.pages+'\nArticole de feronerie: '+hardware.length+'\nOrdinea si directiile sunt propuneri de verificat.\nModelul nu a fost modificat.');
-  }finally{try{fs.unlinkSync(input);}catch(e){}}
- }catch(e){alert('Export asamblare nereusit: '+text(e.message||e));}
+  progress('Date pregatite. Generarea PDF continua in terminal; BAZIS poate fi folosit.');
+  fs.writeFileSync(jobState,'ready','utf8');
+ }catch(e){
+  try{progress('EROARE BAZIS: '+text(e.message||e));if(jobState)fs.writeFileSync(jobState,'error','utf8');}catch(ignore){}
+  alert('Export asamblare nereusit: '+text(e.message||e));
+ }
 }());

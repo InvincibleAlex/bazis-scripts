@@ -243,7 +243,7 @@ def draw_scene(c,parts,new_id,offset,frame,all_parts,hardware=None,mark_hardware
         c.setFillColorRGB(1,1,1);c.setFont('Body',9);c.drawCentredString(a[0],a[1]+14,str(p['label']))
     return pt
 
-def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=None):
+def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=None,progress=None):
     W,H=842,595
     font=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'/'arial.ttf'
     pdfmetrics.registerFont(TTFont('Body',str(font)))
@@ -258,6 +258,7 @@ def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=
         c=canvas.Canvas(str(tmp),pagesize=(W,H));c.setTitle('Asamblare - '+Path(report.get('model','Model')).stem)
         def header(title,sub,items=None):
             nonlocal pages,W,H
+            if progress:progress(title)
             W,H=choose_page(items) if items else (842,595);c.setPageSize((W,H))
             pages+=1;c.setFillColor(HexColor('#172b3a'));c.setFont('Body',20);c.drawString(35,H-43,title[:80])
             c.setFont('Body',10);c.drawString(35,H-64,sub[:130])
@@ -329,12 +330,17 @@ def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=
 def main():
     import sys
     sys.stdout.reconfigure(encoding='utf-8')
-    ap=argparse.ArgumentParser();ap.add_argument('--input',required=True);ap.add_argument('--output',required=True);ap.add_argument('--plan');ap.add_argument('--sample-module');ap.add_argument('--layout',choices=['hierarchical','steps'],default='hierarchical');a=ap.parse_args()
+    sys.stderr.reconfigure(encoding='utf-8')
+    ap=argparse.ArgumentParser();ap.add_argument('--input',required=True);ap.add_argument('--output',required=True);ap.add_argument('--plan');ap.add_argument('--sample-module');ap.add_argument('--layout',choices=['hierarchical','steps'],default='hierarchical');ap.add_argument('--progress',action='store_true');a=ap.parse_args()
+    def progress(message):
+        if a.progress:print(message,file=sys.stderr,flush=True)
+    progress('Citire date exportate din BAZIS...')
     report=clean_report(json.loads(Path(a.input).read_text(encoding='utf-8-sig')));out=Path(a.output).resolve()
     from holes import add_hole_edges
     add_hole_edges(report)
     if out.suffix.lower()!='.pdf':raise ValueError('Destinația trebuie să fie PDF.')
     if not report.get('panels'):raise ValueError('Nu există plăci.')
+    progress('Calcul ordine de montaj si asociere feronerie...')
     plan=json.loads(Path(a.plan).read_text(encoding='utf-8')) if a.plan else make_plan(report)
     expected=[p['id'] for p in report['panels']];actual=[s['panel_id'] for m in plan['modules'] for s in m['steps']]
     if len(actual)!=len(set(actual)) or set(actual)!=set(expected):raise ValueError('Planul trebuie să includă fiecare exemplar exact o dată.')
@@ -343,8 +349,9 @@ def main():
             if len(s['offset_mm'])!=3 or not all(isinstance(v,(int,float)) and math.isfinite(v) for v in s['offset_mm']):raise ValueError('Direcție invalidă.')
     if a.layout=='hierarchical':
         from hierarchical import write_hierarchical
-        pages=write_hierarchical(report,out,plan,a.sample_module)
-    else:pages=write_pdf(report,out,plan)
+        pages=write_hierarchical(report,out,plan,a.sample_module,progress=progress)
+    else:pages=write_pdf(report,out,plan,progress=progress)
+    progress('Salvare raport de asamblare...')
     out.with_suffix('.assembly.json').write_text(json.dumps({'report':report,'plan':plan},ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({'ok':True,'panels':len(expected),'hardware':len(report.get('hardware',[])),'pages':pages,'pdf':str(out)},ensure_ascii=False))
 

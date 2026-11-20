@@ -182,7 +182,7 @@ def plate_view(p,fittings):
     if lower>upper:normal=transform(normal,lambda v:[v[0],-v[1],-v[2]])
     return transform(normal,lambda v:[v[0],v[2],-v[1]])
 
-def write_hierarchical(report,output,plan,sample_module=None):
+def write_hierarchical(report,output,plan,sample_module=None,progress=None):
     pdfmetrics.registerFont(TTFont('Body','C:/Windows/Fonts/arial.ttf'))
     views,groups=prepare(report,plan);nodes={p['id']:p for p in report['nodes']}
     selected=[m for m in plan['modules'] if sample_module is None or m['name']==sample_module]
@@ -191,6 +191,7 @@ def write_hierarchical(report,output,plan,sample_module=None):
         intro=Path(temp)/'intro.pdf';c=canvas.Canvas(str(intro),pagesize=(W,H));page_count=0;fragments=[];seen_preparation={};cw,ch=W,H
         def header(title,subtitle='',items=None):
             nonlocal page_count,cw,ch
+            if progress:progress('Desen: '+title)
             cw,ch=choose_page(items) if items else (W,H);c.setPageSize((cw,ch))
             page_count+=1;c.setFillColor(HexColor('#172b3a'));c.setFont('Body',18);c.drawString(35,ch-43,title[:80]);c.setFont('Body',9);c.drawString(35,ch-65,subtitle[:130])
         def picture(title,group_items,subtitle=''):
@@ -233,7 +234,7 @@ def write_hierarchical(report,output,plan,sample_module=None):
                     pw,ph=target._pagesize
                     draw_scene(target,[plate],[plate['id']],[0,0,0],(35,60,pw-70,ph-150),[plate]+exploded,hardware=exploded,hide_hidden=True)
                     target.showPage()
-            write_pdf(report,body,dict(plan,modules=[module]),work_views=views,include_final=False,before_step=prepare_step)
+            write_pdf(report,body,dict(plan,modules=[module]),work_views=views,include_final=False,before_step=prepare_step,progress=progress)
             fragments.append(body)
         final_file=Path(temp)/'final.pdf';c=canvas.Canvas(str(final_file),pagesize=(W,H))
         picture('Ansamblu complet',[('',report['panels']+report.get('hardware',[]))]);c.save();fragments.append(final_file)
@@ -245,6 +246,7 @@ def write_hierarchical(report,output,plan,sample_module=None):
         # Consistent page numbers across sections; cover the old body-local number.
         total=len(writer.pages)
         for i,page in enumerate(writer.pages,1):
+            if progress:progress(f'Finalizare pagina {i} / {total}')
             pw,ph=float(page.mediabox.width),float(page.mediabox.height)
             buf=BytesIO();overlay=canvas.Canvas(buf,pagesize=(pw,ph));overlay.setFillColorRGB(1,1,1);overlay.rect(pw-90,14,75,25,fill=1,stroke=0)
             overlay.setFillColorRGB(.4,.4,.4);overlay.setFont('Body',9);overlay.drawRightString(pw-35,24,f'{i} / {total}');overlay.save();buf.seek(0)
