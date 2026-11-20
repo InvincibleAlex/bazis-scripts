@@ -37,6 +37,20 @@ const list=ok('list_objects',{recursive:true});assert.equal(list.total,3);
 const first=list.items.find(x=>x.name==='Verticală').object_id;
 const group=list.items.find(x=>x.name==='Corp test').object_id;
 const nested=list.items.find(x=>x.name==='Poliță').object_id;
+// Hardware dimensions come from native parameters, never hole definitions.
+env.first.ParamType=1;env.first.AdvParamData={Diameter:7,Length:50,Zero:0};
+env.first.Source=null;env.first.GetParams=()=>{throw Error('Must not call native methods');};
+env.first.EdgesCount=2;env.first.Edges=[{Count:2,GVertices:[{x:1,y:2,z:3},{x:4,y:5,z:6}]},{Count:0,Radius:3.5}];
+const hardwareBefore={...env.counters};
+const hardware=ok('get_object',{object_id:first}).native_hardware;
+assert.equal(hardware.parameters.AdvParamData.data.values.Diameter,7);
+assert.equal(hardware.parameters.AdvParamData.data.values.Zero,0);
+assert.equal(hardware.parameters.Source.available,false);
+assert.equal(hardware.geometry.edges[0].points_global_mm[0].x,1);
+assert.equal(hardware.geometry.complete,false);
+assert.equal(hardware.geometry.edges[1].native_data.values.Radius,3.5);
+assert.deepEqual(env.counters,hardwareBefore);
+delete env.first.AdvParamData;delete env.first.Edges;delete env.first.EdgesCount;
 // Native tessellation reads retain raw and transformed vertices without edits.
 env.first.IsMesh=()=>true;env.first.AsMesh=()=>env.first;
 env.first.TriListsCount=1;

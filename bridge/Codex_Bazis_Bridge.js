@@ -114,6 +114,44 @@
         }
         return out;
     }
+    // Read native data only: never call GetParams/Build or infer a fitting from its holes.
+    function nativeData(value, depth, seen, budget) {
+        budget=budget||{remaining:300};if(--budget.remaining<0)return {truncated:true};
+        if(scalar(value))return typeof value==='string'?value.slice(0,2000):value;
+        if(!value || typeof value!=='object')return null;
+        if(seen.indexOf(value)>=0)return {reference:true};
+        var names=[], current=value, levels=0;
+        while(current&&levels++<3){
+            try{Object.getOwnPropertyNames(current).forEach(function(k){if(k!=='__proto__'&&k!=='constructor'&&names.indexOf(k)<0&&names.length<100)names.push(k);});current=Object.getPrototypeOf(current);}catch(ignore){break;}
+        }
+        var out={members:names,values:{}};
+        if(depth<=0)return out;
+        seen=seen.concat([value]);
+        names.forEach(function(k){var v=prop(value,k);if(typeof v!=='function'&&typeof v!=='undefined')out.values[k]=nativeData(v,depth-1,seen,budget);});
+        return out;
+    }
+    function readNativeHardware(obj) {
+        var out={source:'BAZIS native object properties and Edges.GVertices',properties:{},
+            parameters:{},geometry:{coordinate_space:'global',edges:[],complete:false},
+            note:'Raw native data. Hole dimensions are not hardware dimensions; missing geometry is not replaced by a bounding box.'};
+        try{out.is_fastener=typeof prop(obj,'IsFastener')==='function'?!!obj.IsFastener():null;}catch(e){out.classification_error=message(e);}
+        ['ParamType','ParamOffset','RotationAngle','LAngle','FirstRotHole','DatumMode','Symmetrized','Symmetrizable','EdgesCount','TriListsCount'].forEach(function(k){var v=prop(obj,k);if(scalar(v)&&typeof v!=='undefined')out.properties[k]=v;});
+        ['AdvParamData','Params','Source'].forEach(function(k){var v=prop(obj,k);out.parameters[k]={available:v!==null&&typeof v!=='undefined',data:nativeData(v,2,[])};});
+        var size=prop(obj,'EdgesCount'), list=prop(obj,'Edges'),total=0;
+        if(typeof size!=='number'||!isFinite(size)||size<0||Math.floor(size)!==size)return out;
+        out.geometry.count=size;out.geometry.complete=size>0&&size<=1000;
+        for(var i=0;i<Math.min(size,1000);i++){
+            var edge=prop(list,i),n=prop(edge,'Count'),vertices=prop(edge,'GVertices'),item={index:i,points_global_mm:[]};
+            if(typeof n==='number'&&isFinite(n)&&n>=0&&Math.floor(n)===n&&n<=2000&&total+n<=20000){
+                for(var j=0;j<n;j++){var p=vector(prop(vertices,j));if(p)item.points_global_mm.push(p);else out.geometry.complete=false;}
+                total+=n;
+            }
+            if(item.points_global_mm.length<2){out.geometry.complete=false;item.native_data=nativeData(edge,1,[]);}
+            out.geometry.edges.push(item);
+        }
+        out.geometry.vertex_count=total;
+        return out;
+    }
     function snapshot(obj, indexes, details) {
         var out={object_id:register(obj,indexes), parent_id:indexes.length>1?parentHandle(indexes):null,
                  name:prop(obj,'Name'), child_count:count(obj), position_parent_mm:vector(prop(obj,'Position'))};
@@ -125,6 +163,7 @@
         out.bounds_global_mm={min:vector(prop(obj,'GabMin')),max:vector(prop(obj,'GabMax'))};
         if(details) {
             out.native_holes=readNativeHoles(obj);
+            out.native_hardware=readNativeHardware(obj);
             out.edge_band_count=count(prop(obj,'Butts')); out.cut_count=count(prop(obj,'Cuts'));
             out.plastic_count=count(prop(obj,'Plastics'));
             out.methods={translate_global:typeof prop(obj,'TranslateGCS')==='function',rotate_global:typeof prop(obj,'RotateGCS')==='function',build:typeof prop(obj,'Build')==='function'};
@@ -538,3 +577,4 @@
         else throw e;
     }
 }());
+
