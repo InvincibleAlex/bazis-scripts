@@ -19,6 +19,8 @@ def transform(items,fn):
     for p in items:
         q=copy.deepcopy(p)
         q['edges']=[[fn(a),fn(b)] for a,b in p.get('edges') or box_edges(p)]
+        if p.get('assembly_entry_points'):
+            q['assembly_entry_points']=[fn(v) for v in p['assembly_entry_points']]
         points=[v for edge in q['edges'] for v in edge]
         q['bounds']={'min':[min(v[i] for v in points) for i in range(3)],'max':[max(v[i] for v in points) for i in range(3)]}
         if p.get('frame'):
@@ -54,6 +56,8 @@ def axial_explode(plate,fittings,distance=180):
         outward=sum((center(fitting)[i]-pc[i])*axis[i] for i in range(3))
         delta=[v*distance*(1 if outward>=0 else -1) for v in axis]
         q=translated([fitting],delta)[0];q['explosion_offset']=delta;q['insertion_axis']=axis;q['explosion_status']='axial'
+        # Entry points stay on the receiving board while the fitting moves out.
+        if fitting.get('assembly_entry_points'):q['assembly_entry_points']=copy.deepcopy(fitting['assembly_entry_points'])
         result.append(q)
     return result
 
@@ -227,12 +231,18 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None):
                     seen_preparation[code]=active_module['name']
                     matching=[q for q in all_panels if (q.get('designation') or ('instance',q['id']))==code]
                     for q in matching:q['preparation_in']=active_module['name']
-                    attached=[h for h in all_fittings if h.get('host_panel_id')==p['id']]
+                    attached=copy.deepcopy([h for h in all_fittings if h.get('host_panel_id')==p['id']])
+                    for h in attached:
+                        h['assembly_entry_points']=[hole['position_global_mm'] for hole in p.get('holes',[])
+                            if hole.get('coordinate_space_verified') and hole.get('fastener_article_id')==h['id']]
                     view=plate_view(p,attached);plate=view[0];exploded=axial_explode(plate,view[1:])
                     refs=', '.join(str(q['label']) for q in matching)
                     page_header(f"{active_module['name']} | Pregătire placă — pasul {step_number:02d}",f"Placa {refs} - {p['designation']} - {p['name']}"+(f" | {len(matching)} buc." if len(matching)>1 else ''),[plate]+exploded)
                     pw,ph=target._pagesize
-                    draw_scene(target,[plate],[plate['id']],[0,0,0],(35,60,pw-70,ph-150),[plate]+exploded,hardware=exploded,hide_hidden=True)
+                    drawing_frame=(35,60,pw-70,ph-150)
+                    point=draw_scene(target,[plate],[plate['id']],[0,0,0],drawing_frame,[plate]+exploded,hardware=exploded,hide_hidden=True)
+                    from preparation_annotations import draw_preparation_annotations
+                    draw_preparation_annotations(target,plate,view[1:],exploded,point,drawing_frame)
                     target.showPage()
             write_pdf(report,body,dict(plan,modules=[module]),work_views=views,include_final=False,before_step=prepare_step,progress=progress)
             fragments.append(body)
