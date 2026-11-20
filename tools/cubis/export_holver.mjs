@@ -5,6 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {SpreadsheetFile,Workbook} from '@oai/artifact-tool';
 import {isPalPanel,distinctBands,drawingName} from './export_cubis.mjs';
 import {transformKomodo} from './export_komodo.mjs';
+import {groupedPlateRows} from './group_rows.mjs';
 // HOLVER_TEMPLATE permite testarea pe o copie a sablonului.
 const template=process.env.HOLVER_TEMPLATE||'\\\\RG\\Bazis\\Sabloane Tabel\\Holver.xlsx';
 // Foaia "general": randuri piese 18-1016 (999); legenda "Tip de cant" are 8 locuri (F10:F13 = 1-4, I10:I13 = 5-8).
@@ -41,11 +42,7 @@ async function writeWorkbook(rows,bands,drawing,outputPath,python){
 }
 async function main(){
  const [reportPath,out,python]=process.argv.slice(2),report=JSON.parse(await fs.readFile(reportPath,'utf8'));
- const rows=[],groups=new Map();
- for(const p of report.placi.filter(isPalPanel)){
-  const row=holverRow(p),key=JSON.stringify(row);
-  if(groups.has(key))rows[groups.get(key)][4]++;else{groups.set(key,rows.length);rows.push(row);}
- }
+ const rows=groupedPlateRows(report.placi.filter(isPalPanel),holverRow);
  if(!rows.length)throw Error('Nu exista panouri PAL pentru Holver');
  if(rows.length>MAX_ROWS)throw Error(`Sablonul Holver are ${MAX_ROWS} randuri pregatite; modelul are ${rows.length}`);
  if(await fs.stat(out).catch(()=>null))throw Error('Fisierul exista deja: '+out);

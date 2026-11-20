@@ -37,6 +37,12 @@ const list=ok('list_objects',{recursive:true});assert.equal(list.total,3);
 const first=list.items.find(x=>x.name==='Verticală').object_id;
 const group=list.items.find(x=>x.name==='Corp test').object_id;
 const nested=list.items.find(x=>x.name==='Poliță').object_id;
+env.first.Plastics={Count:1,Plastics:[{Material:'PAL layer',Thickness:18,Side:0,TextureOrientation:2,MaterialWidth:-1}]};
+const nativeLayer=ok('get_object',{object_id:first}).native_layers;
+assert.equal(nativeLayer.complete,true);assert.equal(nativeLayer.items[0].properties.Thickness,18);
+assert.equal(nativeLayer.items[0].properties.Side,0);assert.equal(nativeLayer.items[0].properties.TextureOrientation,2);
+env.first.Plastics={Count:1,Plastics:[]};assert.equal(ok('get_object',{object_id:first}).native_layers.complete,false);
+delete env.first.Plastics;
 // Hardware dimensions come from native parameters, never hole definitions.
 env.first.ParamType=1;env.first.AdvParamData={Diameter:7,Length:50,Zero:0};
 env.first.Source=null;env.first.GetParams=()=>{throw Error('Must not call native methods');};

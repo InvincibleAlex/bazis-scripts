@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {FileBlob,SpreadsheetFile,Workbook} from '@oai/artifact-tool';
 import {isPalPanel,transformPanel} from './export_cubis.mjs';
+import {groupedPlateRows} from './group_rows.mjs';
 export function transformKomodo(p){
  const material=String(p.material||'').split('\r')[0];
  const original={...p,material_db:{desemnare:material},cote_cubis:{...p.cote_cubis,
@@ -14,11 +15,7 @@ export function transformKomodo(p){
 }
 async function main(){
  const [reportPath,out,python]=process.argv.slice(2),report=JSON.parse(await fs.readFile(reportPath,'utf8'));
- const rows=[],groups=new Map();
- for(const p of report.placi.filter(isPalPanel)){
-  const row=transformKomodo(p),key=JSON.stringify(row);
-  if(groups.has(key))rows[groups.get(key)][4]++;else{groups.set(key,rows.length);rows.push(row);}
- }
+ const rows=groupedPlateRows(report.placi.filter(isPalPanel),transformKomodo);
  if(!rows.length)throw Error('Nu exista panouri PAL pentru Komodo');
  const template='\\\\RG\\Bazis\\Sabloane Tabel\\Komodo.xlsx';
  const work=path.join(path.dirname(fileURLToPath(import.meta.url)),'../../.local/komodo');await fs.mkdir(work,{recursive:true});

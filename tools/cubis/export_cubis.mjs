@@ -3,6 +3,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {FileBlob,SpreadsheetFile,Workbook} from '@oai/artifact-tool';
+import {groupedPlateRows} from './group_rows.mjs';
 const [reportPath,outputPath,python]=process.argv.slice(2);
 // CUBIS_TEMPLATE permite testarea pe o copie a sablonului.
 const template=process.env.CUBIS_TEMPLATE||'\\\\RG\\Bazis\\Sabloane Tabel\\Cubis.xlsx';
@@ -20,6 +21,7 @@ export function transformPanel(p){
  requireValue([0,1,2].includes(fibre),`Piesa ${name}: fibra neidentificata`);
  const bounding=p.cote_cubis?.foloseste_gabarit===true;
  const notes=bounding?['Gabarit; contur nedreptunghiular; scadere cant sub-taiere pe laturile exterioare']:[];
+ if(p.observatii_export)notes.push(p.observatii_export);
  const swap=y>x, local={X_min:'X_min',X_max:'X_max',Y_min:'Y_min',Y_max:'Y_max'};
  if(swap){[x,y]=[y,x];if(fibre)fibre=3-fibre;
   Object.assign(local,{X_min:'Y_max',X_max:'Y_min',Y_min:'X_min',Y_max:'X_max'});}
@@ -53,19 +55,14 @@ async function main(){
  const templateBook=await SpreadsheetFile.importXlsx(await FileBlob.load(template));
  function catalog(sheet){return templateBook.worksheets.getItem(sheet).getRange('A2:A'+(sheet==='PAL'?2000:3000)).values.flat().filter(v=>typeof v==='string'&&v);}
  const pal=catalog('PAL'),abs=catalog('ABS');
- const rows=[],groups=new Map();
- for(const p of report.placi){
-  if(!isPalPanel(p))continue;
-  const row=transformPanel(p);
+ const rows=groupedPlateRows(report.placi.filter(isPalPanel),transformPanel,{byMaterial:true});
+ for(const row of rows){
   requireValue(pal.filter(v=>v===row[1]).length===1,`PAL lipsa sau duplicat in Cubis: ${row[1]}`);
   for(const sign of row.slice(6,10).filter(Boolean))requireValue(abs.filter(v=>v===sign).length===1,`ABS lipsa sau duplicat in Cubis: ${sign}`);
-  const key=JSON.stringify(row);
-  if(groups.has(key))rows[groups.get(key)][4]++;else{groups.set(key,rows.length);rows.push(row);}
  }
  requireValue(rows.length>0,'Modelul nu contine panouri cu PAL in numele materialului');
  // Keep each PAL together; stable sort keeps model order inside a material.
  const firstSeen=new Map();rows.forEach(r=>{if(!firstSeen.has(r[1]))firstSeen.set(r[1],firstSeen.size);});
- rows.sort((a,b)=>firstSeen.get(a[1])-firstSeen.get(b[1]));
  const materials=[...firstSeen.keys()],bands=distinctBands(rows);
  requireValue(rows.length<=MAX_ROWS,`Sablonul Cubis are ${MAX_ROWS} randuri pregatite; modelul are ${rows.length}`);
  requireValue(materials.length<=MAX_PAL,`"Date client" are ${MAX_PAL} locuri PAL; modelul are ${materials.length}: ${materials.join(', ')}`);

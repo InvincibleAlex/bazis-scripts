@@ -152,6 +152,21 @@
         out.geometry.vertex_count=total;
         return out;
     }
+    function readNativeLayers(obj) {
+        var list=prop(obj,'Plastics'),size=prop(list,'Count');
+        var out={source:'BAZIS panel.Plastics',available:list!==null&&typeof list!=='undefined',count:null,items:[],complete:false};
+        if(typeof size!=='number'||!isFinite(size)||size<0||size!==Math.floor(size))return out;
+        out.count=size;out.complete=size<=100;
+        var items=prop(list,'Plastics')||prop(list,'Items')||list;
+        for(var i=0;i<Math.min(size,100);i++){
+            var layer=prop(items,i),row={index:i,properties:{}};
+            if(!layer){row.error='Native layer unavailable';out.complete=false;out.items.push(row);continue;}
+            ['Material','Thickness','MaterialWidth','Side','TextureOrientation'].forEach(function(k){var v=prop(layer,k);if(scalar(v)&&typeof v!=='undefined')row.properties[k]=v;});
+            if(typeof row.properties.Material!=='string'||typeof row.properties.Thickness!=='number')out.complete=false;
+            out.items.push(row);
+        }
+        return out;
+    }
     function snapshot(obj, indexes, details) {
         var out={object_id:register(obj,indexes), parent_id:indexes.length>1?parentHandle(indexes):null,
                  name:prop(obj,'Name'), child_count:count(obj), position_parent_mm:vector(prop(obj,'Position'))};
@@ -164,6 +179,7 @@
         if(details) {
             out.native_holes=readNativeHoles(obj);
             out.native_hardware=readNativeHardware(obj);
+            out.native_layers=readNativeLayers(obj);
             out.edge_band_count=count(prop(obj,'Butts')); out.cut_count=count(prop(obj,'Cuts'));
             out.plastic_count=count(prop(obj,'Plastics'));
             out.methods={translate_global:typeof prop(obj,'TranslateGCS')==='function',rotate_global:typeof prop(obj,'RotateGCS')==='function',build:typeof prop(obj,'Build')==='function'};

@@ -83,6 +83,18 @@
             return {cod:code, descriere:label, bazis_orientation:typeof raw==='number'||typeof raw==='string'?raw:null,
                 bazis_angle:get(panel,'TextureAngle')};
         }
+        function nativeLayers(panel) {
+            var list=get(panel,'Plastics'),n=get(list,'Count'),out=[];
+            if(list===undefined||list===null)return out;
+            if(typeof n!=='number'||n<0||n>100||n!==Math.floor(n))throw Error('Lista nativa de straturi invalida');
+            var items=get(list,'Plastics')||get(list,'Items')||list;
+            for(var i=0;i<n;i++){
+                var layer=get(items,i);if(!layer)throw Error('Strat BAZIS indisponibil: '+i);
+                out.push({index:i,material:str(get(layer,'Material')),grosime_mm:get(layer,'Thickness'),
+                    fata:get(layer,'Side'),orientare_fibra:get(layer,'TextureOrientation'),sursa:'BAZIS panel.Plastics'});
+            }
+            return out;
+        }
         function cubisDimensions(panel,w,h,edges) {
             var issues=[], used={}, c=get(panel,'Contour'), elements=get(c,'Objects');
             var lo=get(c,'Min'), hi=get(c,'Max'), sides={};
@@ -147,13 +159,33 @@
                 var rawW=w, rawH=h;
                 w=exportDimension(w); h=exportDimension(h);
                 var edges=edgeData(o), fibre=fibreData(o), cubis=cubisDimensions(o,w,h,edges);
-                rows.push({
+                var baseRow={
                 nr:rows.length + 1, nume:name, grup:item.parent,
                 pozitie:str(get(o, 'ArtPos')), material:str(get(o, 'MaterialName')),
                 contur_x_mm:w, contur_y_mm:h, grosime_mm:t, canturi:edges, fibra:fibre.cod,
                 contur_bazis_brut:{x_mm:rawW,y_mm:rawH},
                 normalizare_cote:{toleranta_mm:0.01,spre_mm_intreg:true,modificat:w!==rawW||h!==rawH},
-                detalii_fibra:fibre, cote_cubis:cubis, diagnostic_material:materialProbe(o), material_db:null
+                detalii_fibra:fibre, cote_cubis:cubis, diagnostic_material:materialProbe(o), material_db:null,
+                straturi_native:nativeLayers(o)
+                };
+                rows.push(baseRow);
+                baseRow.straturi_native.forEach(function(layer){
+                    // Native face layers follow the panel contour. Bands belong
+                    // to the assembled panel and must not be ordered twice.
+                    if(!/\bpal\b/i.test(layer.material.split('\r')[0]))return;
+                    if(!num(layer.grosime_mm))throw Error('Grosime dublura indisponibila pentru '+baseRow.diagnostic_material.desemnare_piesa);
+                    var code=baseRow.diagnostic_material.desemnare_piesa,label='Dublur\u0103 pentru '+code;
+                    var lf=fibreData({TextureOrientation:layer.orientare_fibra});
+                    rows.push({nr:rows.length+1,nume:label,grup:baseRow.grup,pozitie:baseRow.pozitie,
+                        material:layer.material,grosime_mm:layer.grosime_mm,contur_x_mm:w,contur_y_mm:h,
+                        contur_bazis_brut:{x_mm:rawW,y_mm:rawH},canturi:[],fibra:lf.cod,detalii_fibra:lf,
+                        cote_cubis:{lungime_mm:cubis.lungime_mm,latime_mm:cubis.latime_mm,
+                            scadere_x_mm:cubis.scadere_x_mm,scadere_y_mm:cubis.scadere_y_mm,
+                            foloseste_gabarit:cubis.foloseste_gabarit,stare:cubis.stare},
+                        diagnostic_material:{desemnare_piesa:label,nume_material:layer.material},material_db:null,
+                        tip:'dublura',dublura_pentru_nr:baseRow.nr,dublura_pentru_cod:code,
+                        strat_index:layer.index,fata:layer.fata,sursa:'BAZIS panel.Plastics',
+                        observatii_export:'Lipire pe '+code+'; canturile sunt ale ansamblului, trecute numai la placa de baza.'});
                 });
             }
             var n = get(o, 'Count');
@@ -242,11 +274,12 @@
         if (typeof global !== 'undefined') inspectContext('global', global);
         if (typeof Action !== 'undefined') inspectContext('Action', Action);
         if (typeof ModelFilename === 'string') context.model_filename = ModelFilename;
-        var report = {versiune:6, data:new Date().toISOString(), model:str(get(Model, 'Name')), context_eveniment:context,
+        var report = {versiune:7, data:new Date().toISOString(), model:str(get(Model, 'Name')), context_eveniment:context,
             desen_bln: drawingName, nume_export: exportName, sursa_nume: drawingName ? 'BLN recent' : 'numele modelului (BLN neidentificat)',
             folder_export:folder, sursa_folder:folderSource, diagnostic_folder:folderError,
             sursa_dimensiuni:'Contur X/Y BAZIS, normalizat la mm intreg numai pentru abateri sub 0.01 mm; valori native pastrate in contur_bazis_brut. Cote Cubis = contur normalizat minus grosimea BAZIS a fiecarui cant aplicat, numai cand ClipPanel=true. Komodo/Holver = contur normalizat fara scadere cant. Fara compensare suplimentara de prefrezare. Prima cota=X, a doua=Y; fara rotire.',
-            numar_placi:rows.length, placi:rows};
+            numar_placi:rows.length,numar_placi_baza:rows.filter(function(r){return r.tip!=='dublura';}).length,
+            numar_dubluri:rows.filter(function(r){return r.tip==='dublura';}).length, placi:rows};
         fs.writeFileSync(base + '.json', JSON.stringify(report, null, 2), {encoding:'utf8', flag:'wx'});
         var sides = ['Y_max','Y_min','X_min','X_max'];
         function edgeText(edges) {
