@@ -18,7 +18,12 @@ sys.path.insert(0, str(ROOT / '.local' / 'firebird-python'))
 def password():
     class Blob(ctypes.Structure):
         _fields_ = [('size', wintypes.DWORD), ('data', ctypes.POINTER(ctypes.c_ubyte))]
-    encrypted = (Path.home() / '.bazis-mcp' / 'firebird-password.dpapi').read_bytes()
+    credential=Path(os.environ['APPDATA'])/'BazisExport'/'firebird-password.dpapi'
+    legacy=Path.home()/'.bazis-mcp'/'firebird-password.dpapi'
+    if not credential.exists():credential=legacy
+    if not credential.exists():
+        raise RuntimeError('CREDENTIAL_SETUP_REQUIRED')
+    encrypted = credential.read_bytes()
     buf = ctypes.create_string_buffer(encrypted)
     src = Blob(len(encrypted), ctypes.cast(buf, ctypes.POINTER(ctypes.c_ubyte)))
     out = Blob()
@@ -36,13 +41,18 @@ def password():
 def read_materials(items):
     import firebirdsql
     from firebirdsql.consts import ISOLATION_LEVEL_READ_COMMITED_RO
-    cfg = ET.parse(Path(os.environ['APPDATA']) / 'Bazis' / 'BaseSettings.xml').getroot().find('Base_Connect')
-    if cfg is None or cfg.findtext('Server') != 'RG':
-        raise RuntimeError('Unverified database server in BAZIS settings')
-    database = cfg.findtext('DBName')
+    portable=ROOT/'runtime.json'
+    if portable.exists():
+        cfg=json.loads(portable.read_text(encoding='utf-8-sig'))['database']
+        server=cfg['server'];database=cfg['database'];port=cfg['port']
+    else:
+        cfg = ET.parse(Path(os.environ['APPDATA']) / 'Bazis' / 'BaseSettings.xml').getroot().find('Base_Connect')
+        if cfg is None:raise RuntimeError('Database configuration unavailable')
+        server=cfg.findtext('Server');database=cfg.findtext('DBName');port=14357
+    if server!='RG' or port!=14357:raise RuntimeError('Unverified database endpoint')
     if not database or Path(database).name.lower() != 'baza de date baly_energies  2.0.fdb':
         raise RuntimeError('Unverified database filename in BAZIS settings')
-    connection = firebirdsql.connect(host='RG', port=14357, database=database,
+    connection = firebirdsql.connect(host=server, port=port, database=database,
         user='SYSDBA', password=password(), charset='UTF8', timeout=5,
         isolation_level=ISOLATION_LEVEL_READ_COMMITED_RO)
     try:
@@ -87,7 +97,9 @@ if __name__ == '__main__':
         if not isinstance(items, list) or len(items) > 100000:
             raise ValueError('Invalid request size')
         print(json.dumps({'ok': True, 'materials': read_materials(items)}, ensure_ascii=True))
-    except Exception:
+    except Exception as error:
         # Do not log credentials or connection exception payloads.
-        print(json.dumps({'ok': False, 'error': 'Citirea Firebird a esuat; verificati conexiunea si configurarea locala.'}))
+        detail=('Accesul la baza nu este configurat pentru acest utilizator. Rulati Configureaza acces baza.cmd din folderul comun Export Tabele.'
+            if str(error)=='CREDENTIAL_SETUP_REQUIRED' else 'Citirea Firebird a esuat; verificati parola utilizatorului si conexiunea la RG:14357.')
+        print(json.dumps({'ok': False, 'error': detail}))
         sys.exit(1)

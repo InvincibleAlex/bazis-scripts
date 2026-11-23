@@ -1,3 +1,11 @@
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+export function isDirectExecution(url){
+ if(!process.argv[1])return false;
+ let a=path.resolve(process.argv[1]),b=fileURLToPath(url);
+ if(process.platform==='win32'){a=a.toLowerCase();b=b.toLowerCase();}
+ return a===b;
+}
 // Aggregate a plate together with its native face layers. A layer stays directly
 // below its own parent even when its material differs from the base material.
 export function groupedPlateRows(panels,transform,{byMaterial=false}={}){

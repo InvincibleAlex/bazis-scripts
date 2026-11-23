@@ -1,0 +1,21 @@
+EXPORT TABELE - Cubis / Komodo / Holver
+
+In BAZIS rulati scriptul Export Cubis.js aflat langa acest folder.
+Node, Python si componentele pentru Excel sunt in acest folder comun.
+Nu sunt necesare Codex, o instalare locala Python/Node sau MCP activ.
+
+Sabloanele raman in \\RG\Bazis\Sabloane Tabel. Acolo se modifica datele
+de contact si cataloagele PAL / ABS.
+
+Prima utilizare pe un alt utilizator Windows:
+Rulati Configureaza acces baza.cmd si introduceti parola Firebird SYSDBA.
+Parola se salveaza criptat de Windows in %APPDATA%\BazisExport.
+Nu copiati parole sau fisiere de autentificare in acest folder comun.
+Citirea materialelor foloseste tranzactii Firebird read-only.
+
+Fisierele de lucru pentru Excel se creeaza separat in TEMP pe PC-ul
+care exporta. Mai multe calculatoare pot exporta simultan.
+Documentele rezultate se salveaza in folderul de export ales de script.
+
+runtime.json contine cai relative si adresa bazei, fara parola.
+Nu mutati sau stergeti separat subfolderele runtime, node_modules si tools.

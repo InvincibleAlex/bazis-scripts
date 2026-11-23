@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {FileBlob,SpreadsheetFile,Workbook} from '@oai/artifact-tool';
 import {isPalPanel,transformPanel} from './export_cubis.mjs';
-import {groupedPlateRows} from './group_rows.mjs';
+import {groupedPlateRows,isDirectExecution} from './group_rows.mjs';
 export function transformKomodo(p){
  const material=String(p.material||'').split('\r')[0];
  const original={...p,material_db:{desemnare:material},cote_cubis:{...p.cote_cubis,
@@ -18,7 +19,7 @@ async function main(){
  const rows=groupedPlateRows(report.placi.filter(isPalPanel),transformKomodo);
  if(!rows.length)throw Error('Nu exista panouri PAL pentru Komodo');
  const template='\\\\RG\\Bazis\\Sabloane Tabel\\Komodo.xlsx';
- const work=path.join(path.dirname(fileURLToPath(import.meta.url)),'../../.local/komodo');await fs.mkdir(work,{recursive:true});
+ const work=await fs.mkdtemp(path.join(os.tmpdir(),'bazis-komodo-'));
  const original=await SpreadsheetFile.importXlsx(await FileBlob.load(template));
  const before=await original.render({sheetName:'Sheet2',range:'A19:K24',scale:1,format:'png'});
  await fs.writeFile(path.join(work,'before.png'),new Uint8Array(await before.arrayBuffer()));
@@ -37,4 +38,4 @@ async function main(){
  await fs.unlink(authored);await fs.unlink(manifest);
  console.log(JSON.stringify({ok:true,path:out,rows:rows.length,pieces:report.placi.filter(isPalPanel).length,first_row:rows[0]}));
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(e=>{console.error(e.message);process.exitCode=1;});
+if(isDirectExecution(import.meta.url))main().catch(e=>{console.error(e.message);process.exitCode=1;});

@@ -198,17 +198,25 @@
         }
         // Query all panel materials through one verified read-only Firebird connection.
         try {
-            var readerConfig=JSON.parse(fs.readFileSync(path.join(os.homedir(),'.bazis-mcp','material-db-reader.json'),'utf8'));
+            var commonRoot=path.join('\\\\RG\\Bazis\\Scripts','Export Tabele');
+            if(typeof __dirname==='string'&&fs.existsSync(path.join(__dirname,'Export Tabele','runtime.json')))
+                commonRoot=path.join(__dirname,'Export Tabele');
+            var packageConfig=JSON.parse(fs.readFileSync(path.join(commonRoot,'runtime.json'),'utf8'));
+            var readerConfig={python:path.resolve(commonRoot,packageConfig.python),node:path.resolve(commonRoot,packageConfig.node),
+                script:path.resolve(commonRoot,packageConfig.material_reader),cubis_script:path.resolve(commonRoot,packageConfig.cubis_script)};
+            ['python','node','script','cubis_script'].forEach(function(k){if(!fs.existsSync(readerConfig[k]))throw Error('Lipseste componenta comuna: '+readerConfig[k]);});
             var dbOutput=require('child_process').execFileSync(readerConfig.python,[readerConfig.script],{
                 input:JSON.stringify(rows.map(function(r){return {material:r.material,thickness_mm:r.grosime_mm};})),
                 encoding:'utf8',windowsHide:true,timeout:45000,maxBuffer:8*1024*1024,stdio:['pipe','pipe','pipe']});
             var dbResult=JSON.parse(dbOutput);
-            if(!dbResult.ok || !Array.isArray(dbResult.materials) || dbResult.materials.length!==rows.length)
-                throw Error('Raspuns Firebird invalid');
+            if(!dbResult.ok)throw Error(dbResult.error||'Citirea bazei a esuat');
+            if(!Array.isArray(dbResult.materials) || dbResult.materials.length!==rows.length)throw Error('Raspuns Firebird invalid');
             rows.forEach(function(r,i){r.material_db=dbResult.materials[i];});
-        } catch(_) {
+        } catch(dbError) {
+            var dbFailure=String(dbError.message||dbError);
+            try{if(dbError.stdout)dbFailure=JSON.parse(String(dbError.stdout)).error||dbFailure;}catch(ignore){}
             rows.forEach(function(r){r.material_db={desemnare:null,sursa:'Firebird direct',
-                stare:'Citire directa indisponibila; verificati configurarea/conexiunea locala'};});
+                stare:dbFailure.slice(0,500)};});
         }
         var folder = null, folderSource = '', folderError = null, drawingName = null;
         var modelFile = typeof ModelFilename === 'string' ? ModelFilename : '';
@@ -311,13 +319,13 @@
         ['Cubis','Komodo','Holver'].forEach(function(kind){
             try {
                 if(!readerConfig || !readerConfig.node || !readerConfig.cubis_script)
-                    throw Error('Lipseste configurarea locala pentru export.');
+                    throw Error('Lipseste pachetul comun Export Tabele de langa script.');
                 var helper=kind==='Cubis'?readerConfig.cubis_script:
                     path.join(path.dirname(readerConfig.cubis_script),'export_'+kind.toLowerCase()+'.mjs');
                 var destination=base+' '+kind+'.xlsx';
                 var raw=require('child_process').execFileSync(readerConfig.node,
                     [helper,base+'.json',destination,readerConfig.python],
-                    {encoding:'utf8',windowsHide:true,timeout:60000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe']});
+                    {encoding:'utf8',windowsHide:true,timeout:180000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe']});
                 var outputLines=raw.trim().split(/\r?\n/),result=JSON.parse(outputLines[outputLines.length-1]);
                 if(!result.ok) throw Error('Exportul Excel nu a confirmat reusita.');
                 var written=Array.isArray(result.paths)&&result.paths.length?result.paths:[destination];

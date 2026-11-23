@@ -1,11 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {SpreadsheetFile,Workbook} from '@oai/artifact-tool';
 import {isPalPanel,distinctBands,drawingName} from './export_cubis.mjs';
 import {transformKomodo} from './export_komodo.mjs';
-import {groupedPlateRows} from './group_rows.mjs';
+import {groupedPlateRows,isDirectExecution} from './group_rows.mjs';
 // HOLVER_TEMPLATE permite testarea pe o copie a sablonului.
 const template=process.env.HOLVER_TEMPLATE||'\\\\RG\\Bazis\\Sabloane Tabel\\Holver.xlsx';
 // Foaia "general": randuri piese 18-1016 (999); legenda "Tip de cant" are 8 locuri (F10:F13 = 1-4, I10:I13 = 5-8).
@@ -32,7 +33,7 @@ async function writeWorkbook(rows,bands,drawing,outputPath,python){
  rows.forEach((row,i)=>{for(const [col,value] of Object.entries(holverCells(row,band)))put(col+(FIRST+i),value);});
  bands.slice(0,LEGEND.length).forEach((code,i)=>put(LEGEND[i],code));
  put('I8',drawing);
- const work=path.join(path.dirname(fileURLToPath(import.meta.url)),'../../.local/holver');await fs.mkdir(work,{recursive:true});
+ const work=await fs.mkdtemp(path.join(os.tmpdir(),'bazis-holver-'));
  const authored=path.join(work,`authored-${process.pid}.xlsx`),manifest=path.join(work,`manifest-${process.pid}.json`);
  await(await SpreadsheetFile.exportXlsx(wb)).save(authored);
  await fs.writeFile(manifest,JSON.stringify({rows,touched:{general:touched},sheet_mapping:{general:'xl/worksheets/sheet1.xml'}}));
@@ -49,4 +50,4 @@ async function main(){
  await writeWorkbook(rows,distinctBands(rows),drawingName(report),out,python);
  console.log(JSON.stringify({ok:true,path:out,rows:rows.length,pieces:report.placi.filter(isPalPanel).length,first_row:rows[0]}));
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(e=>{console.error(e.message);process.exitCode=1;});
+if(isDirectExecution(import.meta.url))main().catch(e=>{console.error(e.message);process.exitCode=1;});

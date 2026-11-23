@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {FileBlob,SpreadsheetFile,Workbook} from '@oai/artifact-tool';
-import {groupedPlateRows} from './group_rows.mjs';
+import {groupedPlateRows,isDirectExecution} from './group_rows.mjs';
 const [reportPath,outputPath,python]=process.argv.slice(2);
 // CUBIS_TEMPLATE permite testarea pe o copie a sablonului.
 const template=process.env.CUBIS_TEMPLATE||'\\\\RG\\Bazis\\Sabloane Tabel\\Cubis.xlsx';
@@ -15,7 +16,7 @@ export function transformPanel(p){
  const name=p.diagnostic_material?.desemnare_piesa;
  requireValue(typeof name==='string'&&name.length>0,`Piesa ${p.nume}: lipseste desemnarea`);
  const material=p.material_db?.desemnare;
- requireValue(material,`Piesa ${name}: desemnare PAL indisponibila`);
+ requireValue(material,`Piesa ${name}: desemnare PAL indisponibila. ${p.material_db?.stare||''}`);
  let x=p.cote_cubis?.lungime_mm,y=p.cote_cubis?.latime_mm,fibre=p.fibra;
  requireValue(Number.isFinite(x)&&x>0&&Number.isFinite(y)&&y>0,`Piesa ${name}: cote de taiere neconfirmate`);
  requireValue([0,1,2].includes(fibre),`Piesa ${name}: fibra neidentificata`);
@@ -93,7 +94,7 @@ async function writeWorkbook(rows,materials,bands,outputPath,drawing){
  console.error('Cubis: date completate; recalculare...');
  wb.recalculate();
  console.error('Cubis: recalculare terminata; previzualizare...');
- const work=path.join(path.dirname(fileURLToPath(import.meta.url)),'../../.local/cubis');await fs.mkdir(work,{recursive:true});
+ const work=await fs.mkdtemp(path.join(os.tmpdir(),'bazis-cubis-'));
  const preview=await wb.render({sheetName:'Formular',range:`A1:L${Math.min(rows.length+1,8)}`,scale:1,format:'png'});
  await fs.writeFile(path.join(work,'result.png'),new Uint8Array(await preview.arrayBuffer()));
  const tmp=path.join(work,'authored-'+process.pid+'.xlsx'),manifest=path.join(work,'manifest-'+process.pid+'.json');
@@ -103,4 +104,4 @@ async function writeWorkbook(rows,materials,bands,outputPath,drawing){
  if(repair.status!==0)throw Error(repair.stderr||repair.stdout||'Pastrarea sablonului a esuat');
  await fs.unlink(tmp);await fs.unlink(manifest);
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(e=>{console.error(e.message);process.exitCode=1;});
+if(isDirectExecution(import.meta.url))main().catch(e=>{console.error(e.message);process.exitCode=1;});
