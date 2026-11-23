@@ -7,15 +7,14 @@ Nu sunt necesare Codex, o instalare locala Python/Node sau MCP activ.
 Sabloanele raman in \\RG\Bazis\Sabloane Tabel. Acolo se modifica datele
 de contact si cataloagele PAL / ABS.
 
-Prima utilizare pe un alt utilizator Windows:
-Rulati Configureaza acces baza.cmd si introduceti parola Firebird SYSDBA.
-Parola se salveaza criptat de Windows in %APPDATA%\BazisExport.
-Nu copiati parole sau fisiere de autentificare in acest folder comun.
+Accesul la baza foloseste implicit utilizatorul si parola din runtime.json.
+Nu este necesara configurarea autentificarii pe fiecare calculator.
+Configurarea locala criptata este folosita numai daca parola comuna este eliminata.
 Citirea materialelor foloseste tranzactii Firebird read-only.
 
 Fisierele de lucru pentru Excel se creeaza separat in TEMP pe PC-ul
 care exporta. Mai multe calculatoare pot exporta simultan.
 Documentele rezultate se salveaza in folderul de export ales de script.
 
-runtime.json contine cai relative si adresa bazei, fara parola.
+runtime.json contine cai relative, adresa bazei si autentificarea comuna.
 Nu mutati sau stergeti separat subfolderele runtime, node_modules si tools.

@@ -16,6 +16,10 @@ sys.path.insert(0, str(ROOT / '.local' / 'firebird-python'))
 
 
 def password():
+    portable=ROOT/'runtime.json'
+    if portable.exists():
+        default=json.loads(portable.read_text(encoding='utf-8-sig')).get('database',{}).get('password')
+        if isinstance(default,str) and default:return default
     class Blob(ctypes.Structure):
         _fields_ = [('size', wintypes.DWORD), ('data', ctypes.POINTER(ctypes.c_ubyte))]
     credential=Path(os.environ['APPDATA'])/'BazisExport'/'firebird-password.dpapi'
@@ -44,16 +48,16 @@ def read_materials(items):
     portable=ROOT/'runtime.json'
     if portable.exists():
         cfg=json.loads(portable.read_text(encoding='utf-8-sig'))['database']
-        server=cfg['server'];database=cfg['database'];port=cfg['port']
+        server=cfg['server'];database=cfg['database'];port=cfg['port'];user=cfg.get('user','SYSDBA')
     else:
         cfg = ET.parse(Path(os.environ['APPDATA']) / 'Bazis' / 'BaseSettings.xml').getroot().find('Base_Connect')
         if cfg is None:raise RuntimeError('Database configuration unavailable')
-        server=cfg.findtext('Server');database=cfg.findtext('DBName');port=14357
+        server=cfg.findtext('Server');database=cfg.findtext('DBName');port=14357;user='SYSDBA'
     if server!='RG' or port!=14357:raise RuntimeError('Unverified database endpoint')
     if not database or Path(database).name.lower() != 'baza de date baly_energies  2.0.fdb':
         raise RuntimeError('Unverified database filename in BAZIS settings')
     connection = firebirdsql.connect(host=server, port=port, database=database,
-        user='SYSDBA', password=password(), charset='UTF8', timeout=5,
+        user=user, password=password(), charset='UTF8', timeout=5,
         isolation_level=ISOLATION_LEVEL_READ_COMMITED_RO)
     try:
         cursor = connection.cursor()
