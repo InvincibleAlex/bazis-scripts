@@ -191,6 +191,10 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None):
     views,groups=prepare(report,plan);nodes={p['id']:p for p in report['nodes']}
     selected=[m for m in plan['modules'] if sample_module is None or m['name']==sample_module]
     if not selected:raise ValueError('Corpul cerut nu există în model.')
+    from module_repetitions import find_repetitions
+    repetitions=find_repetitions(report,selected,views)
+    plan['module_repetitions']=repetitions
+    module_ranges={}
     with tempfile.TemporaryDirectory(prefix='assembly-layout-',dir=output.parent) as temp:
         intro=Path(temp)/'intro.pdf';c=canvas.Canvas(str(intro),pagesize=(W,H));page_count=0;fragments=[];seen_preparation={};cw,ch=W,H
         def header(title,subtitle='',items=None):
@@ -215,7 +219,30 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None):
             packed=[(m['name'],views[m['id']][0]+views[m['id']][1]) for m in group['modules']]
             picture(group['name']+' | Explozie pe corpuri',pack(packed,350))
         c.save();fragments.append(intro)
+        assembled_pages=len(PdfReader(intro).pages)
         for module in selected:
+            duplicate=repetitions.get(module['id'])
+            if duplicate:
+                reference=module_ranges[duplicate['reference_module_id']]
+                duplicate['reference_pages']=list(reference)
+                module['repetition_check']['reference_pages']=list(reference)
+                reference_file=Path(temp)/f"reference-{module['id']}.pdf"
+                c=canvas.Canvas(str(reference_file),pagesize=(W,H))
+                mapping=duplicate['panel_mapping']
+                for offset in range(0,len(mapping),24):
+                    header(module['name']+' | Montaj identic',f"Se montează conform {duplicate['reference_name']}, paginile {reference[0]}–{reference[1]}.")
+                    c.setFont('Body',10);c.drawString(35,ch-96,'Folosește instrucțiunile corpului de referință și corespondența plăcilor de mai jos.')
+                    c.setFont('Body',9);c.drawString(35,ch-110,'Cantitățile din inventarul de referință sunt pentru un corp și se repetă pentru acest corp.')
+                    c.setFont('Body',9);c.drawString(35,ch-125,'Placa de referință');c.drawString(180,ch-125,'Placa acestui corp');c.drawString(335,ch-125,'Cod în acest corp')
+                    for index,row in enumerate(mapping[offset:offset+24]):
+                        y=ch-146-index*14
+                        c.drawString(35,y,str(row['reference_label']));c.drawString(180,y,str(row['label']));c.drawString(335,y,str(row['designation'])[:70])
+                        c.setStrokeColor(HexColor('#dddddd'));c.line(35,y-4,cw-35,y-4)
+                    c.showPage()
+                c.save();fragments.append(reference_file)
+                assembled_pages+=len(PdfReader(reference_file).pages)
+                continue
+            module_start=assembled_pages+1
             preparation_file=Path(temp)/f"prep-{module['id']}.pdf";c=canvas.Canvas(str(preparation_file),pagesize=(W,H))
             panels,fittings=views[module['id']]
             picture(module['name']+' | Complet',[('',panels+fittings)])
@@ -246,6 +273,9 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None):
                     target.showPage()
             write_pdf(report,body,dict(plan,modules=[module]),work_views=views,include_final=False,before_step=prepare_step,progress=progress)
             fragments.append(body)
+            assembled_pages+=len(PdfReader(preparation_file).pages)+len(PdfReader(body).pages)
+            module_ranges[module['id']]=(module_start,assembled_pages)
+        plan['module_page_ranges']={key:list(value) for key,value in module_ranges.items()}
         final_file=Path(temp)/'final.pdf';c=canvas.Canvas(str(final_file),pagesize=(W,H))
         picture('Ansamblu complet',[('',report['panels']+report.get('hardware',[]))]);c.save();fragments.append(final_file)
         plan['preparation_codes']={str(k):v for k,v in seen_preparation.items()}

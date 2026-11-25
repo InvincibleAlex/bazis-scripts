@@ -137,3 +137,5 @@ thickness extrusion, atomic composite fittings, hinge detection, links, unchange
 model and temporary-file cleanup. `check_hardware.py` covers Unicode repair and
 unique fitting attribution; `check_repetitions.py` covers repeated boards.
 Live native execution is pending the first run.
+
+Module repetate (2026-11-25): exportul ierarhic compară datele native complete ale modulelor, independent de nume, coduri și poziția globală. Plăcile, canturile, fibra, straturile, prelucrările, feroneria și legăturile către plăci intră în comparație. Modulele cu date incomplete, geometrii aproximative sau reper reflectat păstrează toate paginile. Pentru un duplicat confirmat se generează doar pagina de trimitere la paginile primului corp și corespondența numerelor/codurilor de placă. Planul JSON păstrează toate instanțele și include module_repetitions, module_page_ranges și repetition_check. Este necesar un export nou din BAZIS pentru noul snapshot module_comparison; rapoartele vechi nu sunt deduplicate pe presupuneri.

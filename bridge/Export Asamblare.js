@@ -251,6 +251,18 @@
      var texture=get(o,'TextureOrientation');
      p.duplicate_signature={bands:bands,cuts:0,texture:typeof texture==='number'||typeof texture==='string'?texture:null};
     }
+    // Full native feature snapshot for conservative whole-module equivalence.
+    var plastics=get(o,'Plastics'),plasticCount=get(plastics,'Count'),plasticItems=get(plastics,'Plastics')||plastics;
+    p.module_comparison={version:1,complete:typeof buttCount==='number'&&buttCount>=0&&buttCount<10000&&typeof plasticCount==='number'&&plasticCount>=0&&plasticCount<1000,bands:[],layers:[],texture:scalarFields(o,['TextureOrientation','TextureAngle','FrontFace'])};
+    if(p.module_comparison.complete){
+     for(var mb=0;mb<buttCount;mb++){var edgeBand=get(butts,mb);if(!edgeBand){p.module_comparison.complete=false;break;}p.module_comparison.bands.push(scalarFields(edgeBand,['ElemIndex','Material','Sign','Thickness','Width','ClipPanel','Allowance']));}
+     for(var ml=0;ml<plasticCount;ml++){var faceLayer=get(plasticItems,ml);if(!faceLayer){p.module_comparison.complete=false;break;}p.module_comparison.layers.push(scalarFields(faceLayer,['Material','Thickness','Side','TextureOrientation','MaterialWidth']));}
+    }
+    if(p.module_comparison.complete){
+     p.module_comparison.bands.forEach(function(b){['ElemIndex','Material','Thickness','Width','ClipPanel'].forEach(function(k){if(typeof b[k]==='undefined')p.module_comparison.complete=false;});});
+     p.module_comparison.layers.forEach(function(l){['Material','Thickness','Side','TextureOrientation'].forEach(function(k){if(typeof l[k]==='undefined')p.module_comparison.complete=false;});});
+     if(typeof p.module_comparison.texture.TextureOrientation==='undefined')p.module_comparison.complete=false;
+    }
     panels.push(p);
     panelRefs.push({object:o,record:p});
    }
