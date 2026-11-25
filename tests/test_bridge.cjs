@@ -79,6 +79,16 @@ assert.equal(ok('get_object',{object_id:first}).native_cuts.complete,false);
 delete env.first.Cuts;
 assert.equal(ok('get_object',{object_id:first}).native_cuts.available,false);
 
+// Surface inspection must never invoke unknown native geometry methods/getters.
+let surfaceCalls=0;env.first.FillElements=()=>{surfaceCalls++;throw Error('must not call');};
+const inherited=Object.create(Object.getPrototypeOf(env.first));
+Object.defineProperty(inherited,'HiddenSurfaceTest',{get(){surfaceCalls++;throw Error('must not read');},configurable:true});
+const oldPrototype=Object.getPrototypeOf(env.first);Object.setPrototypeOf(env.first,inherited);
+const surfaceAPI=ok('get_object',{object_id:first}).native_solid.surface_api;
+assert(surfaceAPI.members.some(x=>x.name==='FillElements'&&x.kind==='method'));
+assert(surfaceAPI.members.some(x=>x.name==='HiddenSurfaceTest'&&x.kind==='accessor'));
+assert.equal(surfaceCalls,0);Object.setPrototypeOf(env.first,oldPrototype);delete env.first.FillElements;
+
 // Native band dimensions and contour association must preserve zero/false values.
 env.first.Butts={Count:2,0:{Material:'ABS 2x23',Sign:'edge-code',Thickness:2,Width:23,ClipPanel:false,Allowance:0,ElemIndex:0},1:{Material:'ABS .8',Thickness:0.8,Width:23,ClipPanel:true,ElemIndex:1}};
 env.first.Contour={Min:{x:10,y:20},Max:{x:110,y:220},Objects:[{IsLine:()=>true,AsLine:()=>({Pos1:{x:10,y:20},Pos2:{x:10,y:220}})},{IsLine:()=>false}]};

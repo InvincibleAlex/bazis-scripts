@@ -282,6 +282,31 @@
         out.available=typeof out.properties.TextureOrientation!=='undefined';
         return out;
     }
+    // Inspect inherited native surface interfaces without invoking unknown methods.
+    function inspectSurfaceAPI(obj) {
+        var out={members:[],collections:{},note:'Metadata only. No FillElements, Build, AddDrawData or Triangulate invoked.'};
+        var seen={},current=obj,level=0;
+        while(current&&level<12&&out.members.length<400){
+            var names=[];try{names=Object.getOwnPropertyNames(current);}catch(e){out.error=message(e);break;}
+            for(var i=0;i<names.length&&out.members.length<400;i++){
+                var key=names[i];if(seen[key]||key==='constructor'||key==='__proto__')continue;seen[key]=true;
+                try{
+                    var d=Object.getOwnPropertyDescriptor(current,key),row={name:key,prototype_level:level};
+                    if(d&&typeof d.value==='function'){row.kind='method';row.declared_arguments=d.value.length;}
+                    else if(d&&(d.get||d.set)){row.kind='accessor';row.readable=!!d.get;row.writable=!!d.set;}
+                    else{row.kind=typeof (d&&d.value);if(d&&scalar(d.value))row.value=d.value;}
+                    out.members.push(row);
+                }catch(e){out.members.push({name:key,error:message(e)});}
+            }
+            try{current=Object.getPrototypeOf(current);}catch(e){break;}level++;
+        }
+        ['DrawData','AdditionalDrawData','Elements','Meshes','Surfaces','Faces','Solids','Geometry','TriLists','Source'].forEach(function(k){
+            var v=prop(obj,k);if(v===null||typeof v==='undefined'||typeof v==='function')return;
+            var info={type:typeof v};['Count','TriListsCount','EdgesCount','FaceCount','VertexCount'].forEach(function(n){var x=prop(v,n);if(typeof x==='number'&&isFinite(x))info[n]=x;});
+            out.collections[k]=info;
+        });
+        return out;
+    }
     function readNativeSolidInfo(obj) {
         var out={source:'BAZIS native mesh properties',available:false,complete:false,
             note:'Triangle availability only. Wire edges do not define a closed solid; no shape is inferred from hardware names or holes.'};
@@ -292,7 +317,7 @@
             var n=prop(mesh,'TriListsCount');out.tri_lists_count=typeof n==='number'?n:null;
             out.available=typeof n==='number'&&n>0;
             // Expose native surface API members for objects without the expected triangle lists.
-            if(!out.available)out.native_mesh_data=nativeData(mesh,1,[],{remaining:100});
+            if(!out.available){out.native_mesh_data=nativeData(mesh,1,[],{remaining:100});out.surface_api=inspectSurfaceAPI(mesh);}
             out.geometry_reader='read_geometry';
         }catch(e){out.error=message(e);}
         return out;
