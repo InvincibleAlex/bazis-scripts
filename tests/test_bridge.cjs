@@ -57,6 +57,15 @@ assert.equal(ok('get_object',{object_id:first}).native_panel_contour.complete,fa
 delete env.first.ToGlobal;delete env.first.Contour;
 assert.equal(ok('get_object',{object_id:first}).local_coordinate_system.available,false);
 
+env.context.TextureOrientation={None:0,Horizontal:1,Vertical:2};
+env.first.TextureOrientation=0;env.first.TextureAngle=0;env.first.FrontFace=2;
+env.first.Material={Name:'PAL native',TextureWidth:1200};
+const appearance=ok('get_object',{object_id:first}).native_appearance;
+assert.equal(appearance.orientation_name,'None');assert.equal(appearance.properties.TextureAngle,0);
+assert.equal(appearance.material.values.TextureWidth,1200);
+assert.equal(ok('get_object',{object_id:first}).native_solid.available,false);
+delete env.first.TextureOrientation;delete env.first.TextureAngle;delete env.first.Material;
+
 // Native band dimensions and contour association must preserve zero/false values.
 env.first.Butts={Count:2,0:{Material:'ABS 2x23',Sign:'edge-code',Thickness:2,Width:23,ClipPanel:false,Allowance:0,ElemIndex:0},1:{Material:'ABS .8',Thickness:0.8,Width:23,ClipPanel:true,ElemIndex:1}};
 env.first.Contour={Min:{x:10,y:20},Max:{x:110,y:220},Objects:[{IsLine:()=>true,AsLine:()=>({Pos1:{x:10,y:20},Pos2:{x:10,y:220}})},{IsLine:()=>false}]};

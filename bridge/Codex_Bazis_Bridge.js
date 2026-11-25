@@ -270,6 +270,33 @@
         if(out.properties.Bent===true){out.complete=false;out.note+=' Bent panel: flat XY contour alone does not describe the bent surface.';}
         return out;
     }
+    function readNativeAppearance(obj) {
+        var out={source:'BAZIS native panel/material texture properties',properties:{},orientation_enum:{},
+            note:'Raw native orientation and angle. No assumed numeric enum meanings or angle units; material texture metadata is distinct from panel grain.'};
+        ['TextureOrientation','TextureAngle','FrontFace','MaterialName','TextureWidth','TextureHeight','TextureFileName','TextureName','Color'].forEach(function(k){var v=prop(obj,k);if(scalar(v)&&typeof v!=='undefined')out.properties[k]=v;});
+        var enumeration=typeof TextureOrientation!=='undefined'?TextureOrientation:null;
+        ['None','Horizontal','Vertical'].forEach(function(k){var v=prop(enumeration,k);if(scalar(v)&&typeof v!=='undefined'){out.orientation_enum[k]=v;if(v===out.properties.TextureOrientation)out.orientation_name=k;}});
+        out.material=nativeData(prop(obj,'Material'),1,[]);
+        out.texture=nativeData(prop(obj,'Texture'),1,[]);
+        out.local_coordinate_note='TextureOrientation refers to the native local panel XY, not global model axes.';
+        out.available=typeof out.properties.TextureOrientation!=='undefined';
+        return out;
+    }
+    function readNativeSolidInfo(obj) {
+        var out={source:'BAZIS native mesh properties',available:false,complete:false,
+            note:'Triangle availability only. Wire edges do not define a closed solid; no shape is inferred from hardware names or holes.'};
+        try{
+            var mesh=obj;
+            if(typeof prop(obj,'IsMesh')==='function')out.is_mesh=!!obj.IsMesh();
+            if(out.is_mesh&&typeof prop(obj,'AsMesh')==='function')mesh=obj.AsMesh();
+            var n=prop(mesh,'TriListsCount');out.tri_lists_count=typeof n==='number'?n:null;
+            out.available=typeof n==='number'&&n>0;
+            // Expose native surface API members for objects without the expected triangle lists.
+            if(!out.available)out.native_mesh_data=nativeData(mesh,1,[],{remaining:100});
+            out.geometry_reader='read_geometry';
+        }catch(e){out.error=message(e);}
+        return out;
+    }
     function snapshot(obj, indexes, details) {
         var out={object_id:register(obj,indexes), parent_id:indexes.length>1?parentHandle(indexes):null,
                  name:prop(obj,'Name'), child_count:count(obj), position_parent_mm:vector(prop(obj,'Position'))};
@@ -286,6 +313,8 @@
             out.native_edge_bands=readNativeEdgeBands(obj);
             out.local_coordinate_system=readLocalFrame(obj);
             out.native_panel_contour=readPanelContour(obj);
+            out.native_appearance=readNativeAppearance(obj);
+            out.native_solid=readNativeSolidInfo(obj);
             out.edge_band_count=count(prop(obj,'Butts')); out.cut_count=count(prop(obj,'Cuts'));
             out.plastic_count=count(prop(obj,'Plastics'));
             out.methods={translate_global:typeof prop(obj,'TranslateGCS')==='function',rotate_global:typeof prop(obj,'RotateGCS')==='function',build:typeof prop(obj,'Build')==='function'};
@@ -467,6 +496,7 @@
                     var lists=prop(mesh,'TriLists');
                     for(var i=0;i<n;i++){
                         var list=prop(lists,i), size=prop(list,'Count'), tris=prop(list,'Triangles');
+                        if(i===0)item.native_triangle_list=nativeData(list,1,[],{remaining:100});
                         if(typeof size!=='number' || size<0 || size!==Math.floor(size))fail('INVALID_GEOMETRY','Invalid triangle count');
                         if(used+size>cap)fail('LIMIT','Triangle budget exceeded; read a smaller component');
                         for(var j=0;j<size;j++){
@@ -480,7 +510,7 @@
             }catch(e){if(e.code==='LIMIT')throw e;item.errors.push(message(e));}
             result.components.push(item);
         });
-        result.triangle_count=used;result.coordinate_note='Raw vertices and separately ToGlobal-transformed vertices; validate against object bounds before rendering.';
+        result.triangle_count=used;result.complete=used>0&&result.components.every(function(c){return !c.errors.length&&c.tri_lists_count!==null;});result.solid_closed_verified=false;result.coordinate_note='Raw vertices and separately ToGlobal-transformed vertices; validate against object bounds before rendering.';
         return result;
     };
     handlers.get_selection=function(){
