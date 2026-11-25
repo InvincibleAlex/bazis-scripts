@@ -24,6 +24,52 @@ def example():
     return p
 
 class Sheets(unittest.TestCase):
+    def test_board_rounding_does_not_round_drilling_values(self):
+        from dimension_sheets import board_fmt,fmt
+        self.assertEqual(board_fmt(971.9982617),'972')
+        self.assertEqual(board_fmt(200.754),'200.75')
+        self.assertEqual(board_fmt(100),'100')
+        self.assertEqual(fmt(200.75),'200.75')
+        self.assertEqual(fmt(199.998),'199.998')
+    def test_empty_opposite_face_has_no_duplicate_view_or_table(self):
+        from dimension_sheets import selected_faces
+        p=example();p['holes']=[p['holes'][0]]
+        holes=classified_holes(p,[0,0]);self.assertEqual(selected_faces(holes,[]),[False])
+        with tempfile.TemporaryDirectory() as temp:
+            out=Path(temp)/'sheet.pdf';write_sheets({'panels':[p]},out)
+            text=PdfReader(out).pages[0].extract_text()
+            self.assertIn('Face 1',text);self.assertNotIn('Face 2',text)
+        p['holes'][0]['position_global_mm'][2]=0;p['holes'][0]['direction_global']=[0,0,1]
+        self.assertEqual(selected_faces(classified_holes(p,[0,0]),[]),[True])
+    def test_crowded_labels_are_all_kept_and_text_never_overlaps(self):
+        from unittest.mock import patch
+        from dimension_annotations import AnnotationLayout
+        instances=[]
+        def capture(bounds):
+            layout=AnnotationLayout(bounds);instances.append(layout);return layout
+        p=example();p['holes']=[copy.deepcopy(p['holes'][0]) for _ in range(12)]
+        for i,hole in enumerate(p['holes']):hole['position_global_mm'][0]+=i*.05
+        p['contour_tree']['children'][0]['geometry']=rectangle(140,290,14,7)
+        with tempfile.TemporaryDirectory() as temp,patch('dimension_sheets.AnnotationLayout',side_effect=capture):
+            out=Path(temp)/'sheet.pdf';write_sheets({'panels':[p]},out);text=PdfReader(out).pages[0].extract_text()
+            for i in range(1,13):self.assertIn(f'G{i:02}',text)
+            for layout in instances:
+                for i,(_,box) in enumerate(layout.placements):
+                    for _,other in layout.placements[i+1:]:self.assertFalse(layout.overlaps(box,other))
+                self.assertEqual(sum(label.startswith('G') for label,_ in layout.placements),12)
+    def test_small_opening_dimensions_are_placed_outside(self):
+        from unittest.mock import patch
+        from dimension_annotations import AnnotationLayout
+        from dimension_sheets import annotate_loop
+        from reportlab.pdfgen.canvas import Canvas
+        from io import BytesIO
+        c=Canvas(BytesIO());c.annotation_layout=AnnotationLayout((0,0,500,500))
+        loop={'points':[[0,0],[14,0],[14,7],[0,7],[0,0]],'elements':rectangle(0,0,14,7)['elements']}
+        with patch('dimension_sheets.dimension') as draw:
+            annotate_loop(c,loop,lambda p:p,lambda p:[100+p[0]*.4,100+p[1]*.4],300,972,1)
+            self.assertGreater(draw.call_args_list[0].args[3],102.8)
+            self.assertGreater(draw.call_args_list[1].args[3],105.6)
+
     def test_table_width_follows_text_instead_of_page(self):
         from dimension_sheets import content_column_widths
         from reportlab.pdfbase import pdfmetrics
@@ -37,7 +83,7 @@ class Sheets(unittest.TestCase):
         from dimension_sheets import baseline_dimensions
         for axis in [0,1]:
             with patch('dimension_sheets.dimension') as draw:
-                baseline_dimensions(Mock(),lambda p:[200+p[0],200+p[1]],[(75,FACE),(75.001,FACE),(100,EDGE)],axis,200,200)
+                baseline_dimensions(Mock(),lambda p:[200+p[0],200+p[1]],[(75,FACE),(75.0000001,FACE),(100,EDGE)],axis,200,200)
                 self.assertEqual(draw.call_count,2)
                 calls=draw.call_args_list
                 self.assertEqual(calls[0].args[1],[200,200]);self.assertEqual(calls[1].args[1],[200,200])

@@ -1,5 +1,7 @@
 """Two-sided native board sheets; all view transforms are presentation only."""
 import math
+from decimal import Decimal,ROUND_HALF_UP
+from dimension_annotations import AnnotationLayout
 from pathlib import Path
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -11,6 +13,25 @@ from export_dimensions import geometry,holes_for,milling_for,flatten,xy,curve,di
 FACE=HexColor('#0000ff');THROUGH=HexColor('#ff0000');EDGE=HexColor('#ff00ff')
 MILL=HexColor('#b15d12');INK=HexColor('#172b3a');BUBBLE=HexColor('#1668b2')
 PAGE_W,PAGE_H=1191,842
+
+
+def board_fmt(value):
+    if value is None:return '?'
+    rounded=format(Decimal(str(value)).quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'f')
+    return rounded.rstrip('0').rstrip('.')
+
+
+def selected_faces(holes,cuts):
+    front=any(h['face']=='Zmax' and not h['through'] for h in holes)
+    back=any(h['face']=='Zmin' and not h['through'] for h in holes)
+    for cut in cuts:
+        if cut.get('through'):continue
+        if cut.get('face')=='Zmax':front=True
+        elif cut.get('face')=='Zmin':back=True
+        else:return [False,True]  # An unclassified native machining face must not be hidden.
+    if front and back:return [False,True]
+    if back:return [True]
+    return [False]
 
 
 def view_transform(lo,hi,back=False):
@@ -163,12 +184,19 @@ def draw_axes(c,left,bottom):
 def annotate_loop(c,loop,convert,project,width,height,index):
     pts=[convert(p) for p in loop['points']];mn=[min(p[i] for p in pts) for i in range(2)];mx=[max(p[i] for p in pts) for i in range(2)]
     center=[(mn[i]+mx[i])/2 for i in range(2)];cx,cy=project(center)
-    c.setFillColor(THROUGH);c.setFont('Body',7);c.drawString(project(mn)[0]+4,project(mx)[1]+6,'D'+str(index))
+    c.setFillColor(THROUGH);c.setFont('Body',7)
+    start,end=project(mn),project(mx);span_x=end[0]-start[0];span_y=end[1]-start[1]
+    label_x=fmt(mx[0]-mn[0]);label_y=fmt(mx[1]-mn[1])
+    fits=span_x>=pdfmetrics.stringWidth(label_x,'Body',7)+12 and span_y>=pdfmetrics.stringWidth(label_y,'Body',7)+18
+    tag_y=end[1]+6 if fits else end[1]+29
+    c.annotation_layout.draw(c,start[0]+4,tag_y,'D'+str(index))
     if len(loop['elements'])==1 and loop['elements'][0]['type']=='circle':
-        radius=loop['elements'][0]['radius'];dimension(c,project([mn[0],center[1]]),project([mx[0],center[1]]),cy,'Ø '+fmt(radius*2),color=THROUGH)
+        radius=loop['elements'][0]['radius'];label='Ø '+fmt(radius*2)
+        inside=span_x>=pdfmetrics.stringWidth(label,'Body',7)+12 and span_y>=20
+        dimension(c,project([mn[0],center[1]]),project([mx[0],center[1]]),cy if inside else end[1]+14,label,color=THROUGH)
     else:
-        dimension(c,project([mn[0],center[1]]),project([mx[0],center[1]]),cy-(project(mx)[1]-project(mn)[1])*.2,fmt(mx[0]-mn[0]),color=THROUGH)
-        dimension(c,project([center[0],mn[1]]),project([center[0],mx[1]]),cx+(project(mx)[0]-project(mn)[0])*.2,fmt(mx[1]-mn[1]),True,color=THROUGH)
+        dimension(c,project([mn[0],center[1]]),project([mx[0],center[1]]),cy-span_y*.25 if fits else end[1]+14,label_x,color=THROUGH)
+        dimension(c,project([center[0],mn[1]]),project([center[0],mx[1]]),cx+span_x*.25 if fits else end[0]+16,label_y,True,color=THROUGH)
     # Position dimensions terminate on the opening boundary, never on its axis.
     edge_x=0 if mn[0]<width-mx[0] else width;value_x=mn[0] if edge_x==0 else mx[0]
     edge_y=0 if mn[1]<height-mx[1] else height;value_y=mn[1] if edge_y==0 else mx[1]
@@ -187,7 +215,10 @@ def aligned_dimension(c,a,b,offset,label,color):
     angle=math.degrees(math.atan2(dy,dx))
     if angle>90:angle-=180
     if angle<-90:angle+=180
-    c.translate((a2[0]+b2[0])/2,(a2[1]+b2[1])/2);c.rotate(angle);c.drawCentredString(0,3,label);c.restoreState()
+    c.translate((a2[0]+b2[0])/2,(a2[1]+b2[1])/2);c.rotate(angle)
+    if getattr(c,'annotation_layout',None):c.annotation_layout.draw(c,0,3,label,centered=True)
+    else:c.drawCentredString(0,3,label)
+    c.restoreState()
 
 
 def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right):
@@ -229,20 +260,22 @@ def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
 
 def baseline_dimensions(c,project,entries,axis,left,bottom):
     groups=[]
-    for value,color in sorted(entries,key=lambda item:item[0]):
-        if groups and value-groups[-1][0][0]<=.01:groups[-1].append((value,color))
-        else:groups.append([(value,color)])
+    for entry in sorted(entries,key=lambda item:item[0]):
+        value,color=entry[:2];source=entry[2] if len(entry)>2 else 'hole'
+        if groups and value-groups[-1][0][0]<=.01:groups[-1].append((value,color,source))
+        else:groups.append([(value,color,source)])
     # Each complete dimension starts at the same datum and has its own parallel line.
     available=min(72,max(0,left-50)) if axis==1 else 72
     gap=min(9,available/max(1,len(groups)-1))
     origin=project([0,0])
     for index,group in enumerate(groups):
-        value=dimension_positions(v for v,_ in group)[0];colors=[]
-        for _,color in group:
+        value=sum(v for v,_,_ in group)/len(group);colors=[]
+        label=board_fmt(value) if all(source=='contour' for _,_,source in group) else fmt(value)
+        for _,color,_ in group:
             if color not in colors:colors.append(color)
         endpoint=project([value,0] if axis==0 else [0,value])
         offset=(bottom if axis==0 else left)-27-index*gap
-        dimension(c,origin,endpoint,offset,fmt(value),axis==1,color=colors[0])
+        dimension(c,origin,endpoint,offset,label,axis==1,color=colors[0])
         if len(colors)>1:
             c.saveState();c.setLineWidth(.3)
             for i,color in enumerate(colors[1:]):
@@ -268,13 +301,14 @@ def draw_band_marker(c,label,center,target):
     c.setFillColor(INK);c.setFont('Body',7);c.drawCentredString(center[0],center[1]-2.4,str(label));c.restoreState()
 
 
-def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False):
+def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False,single=False):
     width,height=hi[0]-lo[0],hi[1]-lo[1];convert,vector,flip=view_transform(lo,hi,back)
-    area_width,area_height=(440,400) if portrait else (650,205)
+    area_width,area_height=((440,790) if portrait else (650,490)) if single else ((440,400) if portrait else (650,205))
     scale=min(area_width/width,area_height/height);left=120+(area_width-width*scale)/2;bottom=base+(area_height-height*scale)/2
     top=bottom+height*scale;right=left+width*scale
     project=lambda p:(left+p[0]*scale,bottom+p[1]*scale)
     native=lambda p:project(convert(p))
+    c.annotation_layout=AnnotationLayout((20,base-110,(600 if portrait else 865)-15,base+area_height+33))
     c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,base+area_height+39,'Face 2 / Spate — '+('întoarcere sus–jos' if flip=='y' else 'întoarcere stânga–dreapta') if back else 'Face 1 / Față — Zmax')
     if contour:
         c.setStrokeColor(INK);c.setLineWidth(.25)
@@ -285,8 +319,8 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     for loop in loops:
         c.setStrokeColor(THROUGH if loop['interior'] else INK)
         for e in loop['elements']:curve(c,e,native)
-    dimension(c,project([0,0]),project([width,0]),bottom-13,fmt(width),color=THROUGH)
-    dimension(c,project([0,0]),project([0,height]),left-13,fmt(height),True,color=THROUGH)
+    dimension(c,project([0,0]),project([width,0]),bottom-13,board_fmt(width),color=THROUGH)
+    dimension(c,project([0,0]),project([0,height]),left-13,board_fmt(height),True,color=THROUGH)
     # Contour vertices are located from the view origin, with common coordinates stacked once.
     outer=[xy(e[key]) for loop in loops if not loop['interior'] for e in loop['elements'] for key in ['start','end'] if key in e]
     visible=face_holes(holes,back);positions=[]
@@ -306,19 +340,13 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
             c.line(*a,*project([q[0]+d[0]*length,q[1]+d[1]*length]))
         c.line(a[0]-2,a[1],a[0]+2,a[1]);c.line(a[0],a[1]-2,a[0],a[1]+2)
         positions.append((h,q,a))
-    occupied=[]
     for h,q,a in sorted(positions,key=lambda item:(-item[1][1],item[1][0])):
-        c.setFont('Body',6);tw=pdfmetrics.stringWidth(h['tag'],'Body',6);selected=None
-        for dx,dy in [(4,4),(4,-9),(-tw-4,4),(-tw-4,-9),(4,12),(4,-17),(-tw-4,12),(-tw-4,-17)]:
-            box=(a[0]+dx,a[1]+dy-1,a[0]+dx+tw,a[1]+dy+6)
-            if any(not(box[2]+1<x or x2+1<box[0] or box[3]+1<y or y2+1<box[1]) for x,y,x2,y2 in occupied):continue
-            selected=box;break
-        if selected:
-            occupied.append(selected);c.setFillColor(h['color']);c.drawString(selected[0],selected[1]+1,h['tag'])
+        c.setFont('Body',6);c.setFillColor(h['color'])
+        c.annotation_layout.draw(c,a[0]+5,a[1]+5,h['tag'],target=a)
     # Baseline dimensions: one full dimension line per shared coordinate.
     for axis in [0,1]:
-        entries=[(q[axis],h['color']) for h,q,a in positions if .01<q[axis]<(width if axis==0 else height)-.01]
-        entries.extend((convert(q)[axis],THROUGH) for q in outer if .01<convert(q)[axis]<(width if axis==0 else height)-.01)
+        entries=[(q[axis],h['color'],'hole') for h,q,a in positions if .01<q[axis]<(width if axis==0 else height)-.01]
+        entries.extend((convert(q)[axis],THROUGH,'contour') for q in outer if .01<convert(q)[axis]<(width if axis==0 else height)-.01)
         baseline_dimensions(c,project,entries,axis,left,bottom)
     for i,loop in enumerate([loop for loop in loops if loop['interior']],1):annotate_loop(c,loop,convert,project,width,height,i)
     draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
@@ -340,11 +368,26 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
         # A short external leader keeps the actual banded edge unobstructed.
         _,nx,ny=min([(abs(xx-left),-1,0),(abs(right-xx),1,0),(abs(yy-bottom),0,-1),(abs(top-yy),0,1)])
         marker=[xx+nx*29,yy+ny*29]
-        for shift in [24,-24,44,-44,64,-64,0]:
+        for shift in [24,-24,44,-44,64,-64,84,-84,104,-104,0]:
             candidate=[marker[0]-ny*shift,marker[1]+nx*shift]
-            if all(math.dist(candidate,other)>19 for other in band_markers):marker=candidate;break
+            if all(math.dist(candidate,other)>19 for other in band_markers) and c.annotation_layout.fits((candidate[0]-8,candidate[1]-8,candidate[0]+8,candidate[1]+8)):marker=candidate;break
+        if not c.annotation_layout.fits((marker[0]-8,marker[1]-8,marker[0]+8,marker[1]+8)):
+            for step in range(12,130,6):
+                candidate=[xx+nx*step,yy+ny*step]
+                if c.annotation_layout.fits((candidate[0]-8,candidate[1]-8,candidate[0]+8,candidate[1]+8)):marker=candidate;break
+        if not c.annotation_layout.fits((marker[0]-8,marker[1]-8,marker[0]+8,marker[1]+8)):
+            candidates=[]
+            bounds=c.annotation_layout.bounds
+            for yy2 in range(math.ceil(bounds[1]+9),math.floor(bounds[3]-9),16):
+                for xx2 in range(math.ceil(bounds[0]+9),math.floor(bounds[2]-9),16):
+                    if left-9<xx2<right+9 and bottom-9<yy2<top+9:continue
+                    if c.annotation_layout.fits((xx2-8,yy2-8,xx2+8,yy2+8)):candidates.append([xx2,yy2])
+            if not candidates:raise ValueError('Nu există spațiu pentru reperul de cant '+band['tag'])
+            marker=min(candidates,key=lambda candidate:math.dist(candidate,[xx,yy]))
+        c.annotation_layout.reserve((marker[0]-8,marker[1]-8,marker[0]+8,marker[1]+8))
         band_markers.append(marker)
         draw_band_marker(c,band['tag'],marker,[xx,yy])
+    c.annotation_layout=None
     return visible,convert
 
 
@@ -368,10 +411,12 @@ def write_sheets(report,output,progress=None):
             c.setPageSize((page_width,page_height))
             if progress:progress('Desen: Cotare față/spate placa '+str(p['label']))
             c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,page_height-38,f"Placa {p['label']:02} | {p.get('designation') or p['id']} | {p.get('name','')}"[:120])
-            c.setFont('Body',5);c.drawString(35,page_height-48,f"{fmt(hi[0]-lo[0])} × {fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
-            for back,base in ([(False,685),(True,200)] if portrait else [(False,516),(True,205)]):
-                visible,convert=draw_view(c,*item[:-1],bands,back,base,portrait)
-                top=base+(430 if portrait else 235);table_x=600 if portrait else 865;table_width=page_width-table_x-35
+            c.setFont('Body',5);c.drawString(35,page_height-48,f"{board_fmt(hi[0]-lo[0])} × {board_fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
+            faces=selected_faces(holes,cuts);single=len(faces)==1
+            views=[(faces[0],220 if portrait else 190)] if single else ([(False,685),(True,200)] if portrait else [(False,516),(True,205)])
+            for back,base in views:
+                visible,convert=draw_view(c,*item[:-1],bands,back,base,portrait,single)
+                top=base+((820 if portrait else 520) if single else (430 if portrait else 235));table_x=600 if portrait else 865;table_width=page_width-table_x-35
                 c.setFillColor(INK);c.setFont('Body',8);c.drawString(table_x,top+10,'Găuri — '+('Fața 2 / Spate' if back else 'Fața 1 / Față')+' — mm')
                 rows=[];colors=[]
                 for h in visible[part*20:(part+1)*20]:

@@ -91,11 +91,14 @@ def dimension(c,a,b,offset,label,vertical=False,color=None):
     if vertical:
         x=offset;c.line(a[0],a[1],x-3,a[1]);c.line(b[0],b[1],x-3,b[1]);c.line(x,a[1],x,b[1])
         for y in [a[1],b[1]]:c.line(x-2,y-2,x+2,y+2)
-        c.translate(x-3,(a[1]+b[1])/2);c.rotate(90);c.drawCentredString(0,0,label)
+        c.translate(x-3,(a[1]+b[1])/2);c.rotate(90)
+        if getattr(c,'annotation_layout',None):c.annotation_layout.draw(c,0,0,label,centered=True)
+        else:c.drawCentredString(0,0,label)
     else:
         y=offset;c.line(a[0],a[1],a[0],y-3);c.line(b[0],b[1],b[0],y-3);c.line(a[0],y,b[0],y)
         for x in [a[0],b[0]]:c.line(x-2,y-2,x+2,y+2)
-        c.drawCentredString((a[0]+b[0])/2,y+3,label)
+        if getattr(c,'annotation_layout',None):c.annotation_layout.draw(c,(a[0]+b[0])/2,y+3,label,centered=True)
+        else:c.drawCentredString((a[0]+b[0])/2,y+3,label)
     c.restoreState()
 
 def curve(c,e,project):
