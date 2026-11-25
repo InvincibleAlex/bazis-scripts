@@ -36,7 +36,12 @@ class FakeTTY(io.StringIO):
 terminal=FakeTTY()
 with contextlib.redirect_stdout(terminal):
     console=assembly_console.LiveConsole();console.start();time.sleep(.35);console.write('Etapa noua');console.stop()
-assert 'Se lucreaza...' in terminal.getvalue() and 'Etapa noua' in terminal.getvalue()
+assert '0% [' in terminal.getvalue() and 'Etapa noua' in terminal.getvalue()
+console=assembly_console.LiveConsole();console.update('Generare PDF in proces separat...')
+assert console.line(3)=='['+'█'*12+'░'*8+'] 60% [\\]'
+console.update('Feronerie 50');assert console.percent==60
+console.update('Finalizare pagina 5 / 10');assert console.percent==91
+console.update('TERMINAT | 10 pagini');assert console.percent==100
 output=io.StringIO()
 with contextlib.redirect_stdout(output):
     console=assembly_console.LiveConsole()

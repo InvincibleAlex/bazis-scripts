@@ -6,14 +6,28 @@ import subprocess
 import sys
 import time
 import threading
+import re
 
 class LiveConsole:
     def __init__(self):
-        self.enabled=sys.stdout.isatty();self.lock=threading.RLock();self.done=threading.Event();self.thread=None
+        self.enabled=sys.stdout.isatty();self.lock=threading.RLock();self.done=threading.Event();self.thread=None;self.percent=0
+    def update(self,message):
+        stages={'Citire model:':5,'Feronerie ':10,'Placa ':10,'Citire terminata:':30,
+            'Calcul nativ al gaurilor':35,'Calcul gauri terminat':45,'Pregatire date':50,
+            'Date pregatite.':55,'Generare PDF':60,'Calcul ordine':65,'Desen:':70,
+            'Inventar':73,'Pregătire placă':76,'Pasul':80,'Salvare raport':99,'TERMINAT |':100}
+        for key,value in stages.items():
+            if key in message:self.percent=max(self.percent,value)
+        match=re.search(r'Finalizare pagina (\d+) / (\d+)',message)
+        if match and int(match[2]):self.percent=max(self.percent,min(98,85+int(13*int(match[1])/int(match[2]))))
+    def line(self,index):
+        filled=self.percent//5
+        return '['+'█'*filled+'░'*(20-filled)+f'] {self.percent}% ['+'|/-\\'[index%4]+']'
     def clear(self):
         if self.enabled:sys.stdout.write('\r'+' '*65+'\r');sys.stdout.flush()
     def write(self,message,end='\n',error=False):
         with self.lock:
+            self.update(message)
             self.clear();print(message,end=end,file=sys.stderr if error else sys.stdout,flush=True)
     def start(self):
         if not self.enabled:return
@@ -21,12 +35,14 @@ class LiveConsole:
             i=0
             while not self.done.wait(.15):
                 with self.lock:
-                    sys.stdout.write('\r['+'|/-\\'[i%4]+'] Se lucreaza...');sys.stdout.flush();i+=1
+                    sys.stdout.write('\r'+self.line(i));sys.stdout.flush();i+=1
         self.thread=threading.Thread(target=animate,daemon=True);self.thread.start()
     def stop(self):
         self.done.set()
         if self.thread:self.thread.join(timeout=2)
-        with self.lock:self.clear()
+        with self.lock:
+            self.clear()
+            if self.enabled and self.percent==100:print(self.line(0),flush=True)
 
 def run_renderer(args,console):
     child=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',bufsize=1)
