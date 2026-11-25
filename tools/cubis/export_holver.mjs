@@ -36,7 +36,7 @@ async function writeWorkbook(rows,bands,drawing,outputPath,python){
  const work=await fs.mkdtemp(path.join(os.tmpdir(),'bazis-holver-'));
  const authored=path.join(work,`authored-${process.pid}.xlsx`),manifest=path.join(work,`manifest-${process.pid}.json`);
  await(await SpreadsheetFile.exportXlsx(wb)).save(authored);
- await fs.writeFile(manifest,JSON.stringify({rows,touched:{general:touched},sheet_mapping:{general:'xl/worksheets/sheet1.xml'},size_piece_inputs:{sheet:'general',first_row:18,columns:'FGHIJKLMNOPQ',material:'F',notes:'Q',resize_columns:false}}));
+ await fs.writeFile(manifest,JSON.stringify({rows,touched:{general:touched},sheet_mapping:{general:'xl/worksheets/sheet1.xml'},size_piece_inputs:{sheet:'general',first_row:18,columns:'FGHIJKLMNOPQ',material:'F',notes:'Q',resize_columns:false,wrap_notes:true,shrink_columns:"H"}}));
  const merged=spawnSync(python,[path.join(path.dirname(fileURLToPath(import.meta.url)),'preserve_template.py'),template,authored,manifest,outputPath],{encoding:'utf8',windowsHide:true});
  if(merged.status!==0)throw Error(merged.stderr||merged.stdout||'Salvare Holver esuata');
  await fs.unlink(authored);await fs.unlink(manifest);

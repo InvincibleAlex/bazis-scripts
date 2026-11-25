@@ -29,7 +29,7 @@ async function main(){
  const authored=path.join(work,`authored-${process.pid}.xlsx`),manifest=path.join(work,`manifest-${process.pid}.json`);
  await(await SpreadsheetFile.exportXlsx(wb)).save(authored);
  const touched=[];for(let r=20;r<20+rows.length;r++)for(const c of 'ABCDEFGHIJK')touched.push(c+r);
- await fs.writeFile(manifest,JSON.stringify({rows,touched:{Sheet2:touched},sheet_mapping:{Sheet2:'xl/worksheets/sheet1.xml'},size_piece_inputs:{sheet:'Sheet2',first_row:20,columns:'ABCDEFGHIJK',material:'B',notes:'K',resize_columns:false}}));
+ await fs.writeFile(manifest,JSON.stringify({rows,touched:{Sheet2:touched},sheet_mapping:{Sheet2:'xl/worksheets/sheet1.xml'},size_piece_inputs:{sheet:'Sheet2',first_row:20,columns:'ABCDEFGHIJK',material:'B',notes:'K',resize_columns:true,wrap_material:false}}));
  const merged=spawnSync(python,[path.join(path.dirname(fileURLToPath(import.meta.url)),'preserve_komodo.py'),template,authored,manifest,out],{encoding:'utf8',windowsHide:true});
  if(merged.status!==0)throw Error(merged.stderr||merged.stdout||'Salvare Komodo esuata');
  const final=await SpreadsheetFile.importXlsx(await FileBlob.load(out));

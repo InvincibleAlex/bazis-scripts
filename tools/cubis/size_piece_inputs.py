@@ -23,10 +23,10 @@ def validate_styles(styles):
             if -1 in ranks or ranks!=sorted(ranks) or len(tags)!=len(set(tags)):
                 raise ValueError('Invalid Excel CT_Xf child order: '+str(tags))
 
-def size_inputs(sheet,styles,first,last,columns,material,notes,resize_columns=True):
+def size_inputs(sheet,styles,first,last,columns,material,notes,resize_columns=True,wrap_material=True,wrap_notes=False,shrink_columns=""):
     styles_root=ET.fromstring(styles);xfs=styles_root.find('{'+NS+'}cellXfs');added=[];cache={}
-    def style(index,wrap):
-        key=(index,wrap)
+    def style(index,wrap,shrink=False):
+        key=(index,wrap,shrink)
         if key not in cache:
             xf=copy.deepcopy(xfs[index]);alignment=xf.find('{'+NS+'}alignment')
             if alignment is None:
@@ -34,7 +34,9 @@ def size_inputs(sheet,styles,first,last,columns,material,notes,resize_columns=Tr
                 # CT_Xf requires alignment BEFORE protection and extLst.
                 insert_at=next((i for i,child in enumerate(xf) if child.tag.rsplit('}',1)[-1] in ('protection','extLst')),len(xf))
                 xf.insert(insert_at,alignment)
-            alignment.set('wrapText','1' if wrap else '0');xf.set('applyAlignment','1')
+            alignment.set('wrapText','1' if wrap else '0')
+            if shrink:alignment.set('shrinkToFit','1')
+            xf.set('applyAlignment','1')
             cache[key]=len(xfs)+len(added);added.append(ET.tostring(xf,encoding='unicode').replace(' xmlns="'+NS+'"',''))
         return cache[key]
     root=ET.fromstring(sheet);values={}
@@ -62,7 +64,7 @@ def size_inputs(sheet,styles,first,last,columns,material,notes,resize_columns=Tr
             if cell:
                 xml=cell[0];existing=re.search(r'\bs="(\d+)"',xml);index=int(existing[1]) if existing else 0
                 xml=re.sub(r'\s+s="\d+"','',xml,count=1)
-                xml=xml.replace('<c ','<c s="'+str(style(index,col==material))+'" ',1)
+                xml=xml.replace('<c ','<c s="'+str(style(index,(col==material and wrap_material) or (col==notes and wrap_notes),col in shrink_columns))+'" ',1)
                 body=body[:cell.start()]+xml+body[cell.end():]
             elif col==notes:
                 at=len(body)
@@ -71,7 +73,9 @@ def size_inputs(sheet,styles,first,last,columns,material,notes,resize_columns=Tr
                 body=body[:at]+'<c r="'+address+'" s="'+str(style(0,False))+'"/>'+body[at:]
         # Observation length never influences row height; it remains one line.
         text=values.get((r,material),'');lines=sum(max(1,math.ceil(len(line)/max(1,widths[material]-2))) for line in text.split('\n'))
-        height=max(15,min(60,lines*15));opening=re.sub(r'\s+(ht|customHeight)="[^"]*"','',match[1]);opening=opening[:-1]+' ht="'+str(height)+'" customHeight="1">'
+        height=max(15,min(60,lines*15)) if wrap_material else 15
+        # Wrapped Holver notes are clipped to the existing compact piece-row height.
+        opening=re.sub(r'\s+(ht|customHeight)="[^"]*"','',match[1]);opening=opening[:-1]+' ht="'+str(height)+'" customHeight="1">'
         sheet=sheet[:match.start()]+opening+body+match[3]+sheet[match.end():]
     found=re.search(r'<cols\b[^>]*>.*?</cols>',sheet,re.S)
     old=ET.fromstring('<root xmlns="'+NS+'">'+found[0]+'</root>')[0] if found else []

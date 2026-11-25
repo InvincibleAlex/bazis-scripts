@@ -28,3 +28,15 @@ try:validate_styles(bad)
 except ValueError:pass
 else:raise AssertionError('Invalid CT_Xf order must be rejected before saving')
 print('PASS: protected styles use valid Excel child order; header column widths retained; invalid styles rejected')
+# Provider-specific layout rules must not alter Cubis defaults.
+komodo,ks=size_inputs(sheet,styles,2,2,list('ABCDEFGHIJK'),'B','K',wrap_material=False)
+kr=ET.fromstring(komodo);kx=ET.fromstring(ks).find('{'+NS+'}cellXfs')
+for cell in kr.findall('{'+NS+'}sheetData/{'+NS+'}row[@r="2"]/{'+NS+'}c'):
+ if cell.get('r')!='L2':assert kx[int(cell.get('s','0'))].find('{'+NS+'}alignment').get('wrapText')=='0'
+holver,hs=size_inputs(sheet,styles,2,2,list('ABCDEFGHIJK'),'B','K',resize_columns=False,wrap_notes=True,shrink_columns='A')
+hr=ET.fromstring(holver);hx=ET.fromstring(hs).find('{'+NS+'}cellXfs')
+for address,attribute in [('K2','wrapText'),('A2','shrinkToFit')]:
+ cell=hr.find('{'+NS+'}sheetData/{'+NS+'}row[@r="2"]/{'+NS+'}c[@r="'+address+'"]')
+ assert hx[int(cell.get('s'))].find('{'+NS+'}alignment').get(attribute)=='1'
+assert hr.find('{'+NS+'}sheetData/{'+NS+'}row[@r="2"]').get('ht')=='15'
+print('PASS: Komodo nowrap; Holver notes contained, code shrunk, row height capped')
