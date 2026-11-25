@@ -297,6 +297,29 @@
         }catch(e){out.error=message(e);}
         return out;
     }
+    function readNativeCuts(obj) {
+        var list=prop(obj,'Cuts'),size=prop(list,'Count');
+        var out={source:'BAZIS panel.Cuts',available:list!==null&&typeof list!=='undefined',count:null,items:[],complete:false,
+            coordinate_note:'Trajectory uses the native panel local XY frame. Section is the native tool/cut profile, not a panel XY contour. Local/global panel matrices are returned separately.',
+            interpretation_note:'CutType, FrontSide and Angle remain native values; no guessed enum meanings, angle units or derived depth. Missing parameters are not zero.'};
+        if(typeof size!=='number'||!isFinite(size)||size<0||size!==Math.floor(size))return out;
+        out.count=size;out.complete=size<=1000;
+        var items=prop(list,'Cuts')||list,budget={remaining:10000};
+        function fields(o,names){var result={};names.forEach(function(k){var v=prop(o,k);if(scalar(v)&&typeof v!=='undefined')result[k]=v;});return result;}
+        for(var i=0;i<Math.min(size,1000);i++){
+            var cut=prop(items,i),row={index:i,properties:{},parameters:null,complete:false};
+            if(!cut){row.error='Native cut unavailable';out.complete=false;out.items.push(row);continue;}
+            row.properties=fields(cut,['Name','Sign','CutType','FrontSide','Thickness','Depth','Offset','Offset2','Radius','Width','Angle']);
+            var params=prop(cut,'Params');
+            if(params!==null&&typeof params!=='undefined')row.parameters=fields(params,['Name','Sign','SignFormula','CutType','Depth','Offset','Offset2','Radius','Width','Angle','Fragment']);
+            row.trajectory=readNativeContour(prop(cut,'Trajectory'),0,budget);
+            row.section=readNativeContour(prop(cut,'Contour'),0,budget);
+            row.complete=row.trajectory.complete&&row.section.complete;
+            if(!row.complete)out.complete=false;
+            out.items.push(row);
+        }
+        return out;
+    }
     function snapshot(obj, indexes, details) {
         var out={object_id:register(obj,indexes), parent_id:indexes.length>1?parentHandle(indexes):null,
                  name:prop(obj,'Name'), child_count:count(obj), position_parent_mm:vector(prop(obj,'Position'))};
@@ -313,6 +336,7 @@
             out.native_edge_bands=readNativeEdgeBands(obj);
             out.local_coordinate_system=readLocalFrame(obj);
             out.native_panel_contour=readPanelContour(obj);
+            out.native_cuts=readNativeCuts(obj);
             out.native_appearance=readNativeAppearance(obj);
             out.native_solid=readNativeSolidInfo(obj);
             out.edge_band_count=count(prop(obj,'Butts')); out.cut_count=count(prop(obj,'Cuts'));

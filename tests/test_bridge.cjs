@@ -66,6 +66,19 @@ assert.equal(appearance.material.values.TextureWidth,1200);
 assert.equal(ok('get_object',{object_id:first}).native_solid.available,false);
 delete env.first.TextureOrientation;delete env.first.TextureAngle;delete env.first.Material;
 
+// Cut trajectory and section retain distinct native coordinate semantics.
+const cutLine={IsLine:()=>true,AsLine:()=>({Pos1:{x:5,y:10},Pos2:{x:45,y:10}})};
+env.first.Cuts={Count:1,Cuts:[{Name:'Groove',CutType:0,FrontSide:false,Thickness:0,Params:{Depth:0,Width:6,Offset:0,Angle:0},Trajectory:{Count:1,Objects:[cutLine]},Contour:{Count:0}}]};
+const cuts=ok('get_object',{object_id:first}).native_cuts;
+assert.equal(cuts.complete,true);assert.equal(cuts.items[0].parameters.Depth,0);
+assert.equal(cuts.items[0].properties.FrontSide,false);
+assert.equal(cuts.items[0].trajectory.elements[0].start_local_mm.x,5);
+assert.equal(cuts.items[0].parameters.Radius,undefined);
+env.first.Cuts.Cuts[0].Trajectory={Count:1,Objects:[]};
+assert.equal(ok('get_object',{object_id:first}).native_cuts.complete,false);
+delete env.first.Cuts;
+assert.equal(ok('get_object',{object_id:first}).native_cuts.available,false);
+
 // Native band dimensions and contour association must preserve zero/false values.
 env.first.Butts={Count:2,0:{Material:'ABS 2x23',Sign:'edge-code',Thickness:2,Width:23,ClipPanel:false,Allowance:0,ElemIndex:0},1:{Material:'ABS .8',Thickness:0.8,Width:23,ClipPanel:true,ElemIndex:1}};
 env.first.Contour={Min:{x:10,y:20},Max:{x:110,y:220},Objects:[{IsLine:()=>true,AsLine:()=>({Pos1:{x:10,y:20},Pos2:{x:10,y:220}})},{IsLine:()=>false}]};
