@@ -14,7 +14,7 @@ Frezările drepte cu profil dreptunghiular sunt cotate când amprenta este confi
 
 Contururile închise sunt citite din Contour și arborele Contours/Children. Golurile sunt separate prin includere geometrică; se cotează dimensiunile interioare și distanțele X/Y către cele mai apropiate margini. Cercurile au diametrul cotat. Pentru forme poligonale, dimensiunile interioare sunt extinderea X/Y a golului. Plăcile curbate necesită desfășurata nativă.
 
-Canturile folosesc ElemIndex nativ, cu repere C1, C2 etc. pe muchii și tabel cu nume, denumire și grosime originale. Direcția texturii folosește enumerația nativă Horizontal/Vertical și este reprezentată prin două linii paralele în centrul plăcii; pentru None nu se inventează o direcție.
+Canturile folosesc ElemIndex nativ, cu repere numerice încercuite și săgeată către muchia căntuită și tabel cu nume, denumire și grosime originale. Direcția texturii folosește enumerația nativă Horizontal/Vertical și este reprezentată prin două linii paralele în centrul plăcii; pentru None nu se inventează o direcție.
 
 Lângă PDF se salvează `.cote.json` cu raportul nativ și planul. Cartușul, orientarea personalizată și secțiunea/modelul de freză sunt lăsate deoparte.
 

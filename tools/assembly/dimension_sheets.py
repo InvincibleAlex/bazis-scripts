@@ -106,7 +106,7 @@ def native_bands(panel):
     if bands is None:bands=(panel.get('duplicate_signature') or {}).get('bands',[])
     rows=[]
     for b in bands:
-        rows.append({'tag':'C'+str(len(rows)+1),'element':b.get('ElemIndex',b.get('element')),
+        rows.append({'tag':str(len(rows)+1),'element':b.get('ElemIndex',b.get('element')),
                      'name':str(b.get('Material',b.get('material',''))),'sign':str(b.get('Sign',b.get('sign',''))),
                      'thickness':b.get('Thickness',b.get('thickness'))})
     return rows
@@ -247,6 +247,20 @@ def ordinate_dimensions(c,project,entries,axis,left,bottom):
         c.restoreState()
 
 
+def draw_band_marker(c,label,center,target):
+    c.saveState();c.setStrokeColor(INK);c.setFillColor(INK);c.setLineWidth(.6)
+    dx,dy=target[0]-center[0],target[1]-center[1];length=math.hypot(dx,dy)
+    radius=max(7,pdfmetrics.stringWidth(str(label),'Body',7)/2+3)
+    if length>radius+4:
+        ux,uy=dx/length,dy/length
+        c.line(center[0]+ux*radius,center[1]+uy*radius,*target)
+        # Open arrowhead terminates exactly on the native contour edge.
+        c.line(*target,target[0]-ux*5-uy*1.7,target[1]-uy*5+ux*1.7)
+        c.line(*target,target[0]-ux*5+uy*1.7,target[1]-uy*5-ux*1.7)
+    c.setFillColorRGB(1,1,1);c.circle(*center,radius,stroke=1,fill=1)
+    c.setFillColor(INK);c.setFont('Body',7);c.drawCentredString(center[0],center[1]-2.4,str(label));c.restoreState()
+
+
 def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False):
     width,height=hi[0]-lo[0],hi[1]-lo[1];convert,vector,flip=view_transform(lo,hi,back)
     area_width,area_height=(440,400) if portrait else (650,205)
@@ -308,14 +322,22 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
         gx,gy=project([width*.5,height*.5])
         for offset in [-3,3]:c.line(gx-d[0]*length/2+nx*offset,gy-d[1]*length/2+ny*offset,gx+d[0]*length/2+nx*offset,gy+d[1]*length/2+ny*offset)
     contour_elements=(contour or {}).get('elements',[])
+    band_markers=[]
     for band in bands:
         index=band['element']
         if not isinstance(index,int) or index<0 or index>=len(contour_elements):continue
         pts=sampled(contour_elements[index])
         if not pts:continue
         mid=pts[len(pts)//2] if len(pts)>2 else [(pts[0][i]+pts[-1][i])/2 for i in range(2)]
-        xx,yy=native(mid);c.setStrokeColor(INK);c.setFillColorRGB(1,1,1);c.circle(xx,yy,6,stroke=1,fill=1)
-        c.setFillColor(INK);c.setFont('Body',5);c.drawCentredString(xx,yy-1.8,band['tag'])
+        xx,yy=native(mid)
+        # A short external leader keeps the actual banded edge unobstructed.
+        _,nx,ny=min([(abs(xx-left),-1,0),(abs(right-xx),1,0),(abs(yy-bottom),0,-1),(abs(top-yy),0,1)])
+        marker=[xx+nx*29,yy+ny*29]
+        for shift in [24,-24,44,-44,64,-64,0]:
+            candidate=[marker[0]-ny*shift,marker[1]+nx*shift]
+            if all(math.dist(candidate,other)>19 for other in band_markers):marker=candidate;break
+        band_markers.append(marker)
+        draw_band_marker(c,band['tag'],marker,[xx,yy])
     return visible,convert
 
 
