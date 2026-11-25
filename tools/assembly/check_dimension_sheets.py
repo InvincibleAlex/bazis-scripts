@@ -24,6 +24,14 @@ def example():
     return p
 
 class Sheets(unittest.TestCase):
+    def test_table_width_follows_text_instead_of_page(self):
+        from dimension_sheets import content_column_widths
+        from reportlab.pdfbase import pdfmetrics
+        headers=['Nr.','Adâncime'];rows=[['1','12']]
+        widths=content_column_widths(headers,rows,6.5,700)
+        self.assertLess(sum(widths),100)
+        self.assertGreaterEqual(widths[1],pdfmetrics.stringWidth('Adâncime','Body',6.5)+8)
+
     def test_baseline_dimensions_start_at_one_origin_and_merge_duplicates(self):
         from unittest.mock import Mock,patch
         from dimension_sheets import baseline_dimensions

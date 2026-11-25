@@ -123,11 +123,19 @@ def grain_vector(panel):
     return None
 
 
+def content_column_widths(headers,rows,font,max_width):
+    measured=[max(pdfmetrics.stringWidth(str(row[i]),'Body',font) for row in [headers]+rows)+8 for i in range(len(headers))]
+    total=sum(measured)
+    return measured if total<=max_width else [value*max_width/total for value in measured]
+
+
 def table(c,x,top,width,headers,rows,widths,colors=None,font=6.5,row_height=10):
     c.saveState();cols=[x]
-    for fraction in widths:cols.append(cols[-1]+fraction*width)
+    for value in content_column_widths(headers,rows,font,width):cols.append(cols[-1]+value)
+    width=cols[-1]-x
+    c.setFillColor(HexColor('#f4f6f7'));c.rect(x,top-row_height,width,row_height,stroke=0,fill=1)
     height=row_height*(len(rows)+1)
-    c.setStrokeColor(HexColor('#6b7780'));c.setLineWidth(.35)
+    c.setStrokeColor(HexColor('#6b7780'));c.setLineWidth(.2)
     for cx in cols:c.line(cx,top,cx,top-height)
     for i in range(len(rows)+2):c.line(x,top-i*row_height,x+width,top-i*row_height)
     c.setFillColor(INK);c.setFont('Body',font)
@@ -144,7 +152,7 @@ def table(c,x,top,width,headers,rows,widths,colors=None,font=6.5,row_height=10):
 
 
 def draw_axes(c,left,bottom):
-    c.saveState();c.setStrokeColor(INK);c.setFillColor(INK);c.setLineWidth(.45);c.setFont('Body',5)
+    c.saveState();c.setStrokeColor(INK);c.setFillColor(INK);c.setLineWidth(.25);c.setFont('Body',5)
     c.circle(left,bottom,2,stroke=1,fill=0)
     c.line(left,bottom,left+12,bottom);c.line(left,bottom,left,bottom+12)
     c.line(left+12,bottom,left+9,bottom+1);c.line(left+12,bottom,left+9,bottom-1)
@@ -173,7 +181,7 @@ def aligned_dimension(c,a,b,offset,label,color):
     dx,dy=b[0]-a[0],b[1]-a[1];length=math.hypot(dx,dy)
     if length<.0001:return
     normal=[-dy/length,dx/length];a2=[a[i]+normal[i]*offset for i in range(2)];b2=[b[i]+normal[i]*offset for i in range(2)]
-    c.saveState();c.setStrokeColor(color);c.setFillColor(color);c.setLineWidth(.35);c.setFont('Body',7)
+    c.saveState();c.setStrokeColor(color);c.setFillColor(color);c.setLineWidth(.2);c.setFont('Body',7)
     c.line(*a,*a2);c.line(*b,*b2);c.line(*a2,*b2)
     for q in [a2,b2]:c.line(q[0]-2,q[1]-2,q[0]+2,q[1]+2)
     angle=math.degrees(math.atan2(dy,dx))
@@ -185,7 +193,7 @@ def aligned_dimension(c,a,b,offset,label,color):
 def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right):
     visible=[cut for cut in cuts if cut.get('through') or cut.get('face')==('Zmin' if back else 'Zmax') or cut.get('face') not in ('Zmin','Zmax')]
     for index,cut in enumerate(visible):
-        c.setStrokeColor(MILL);c.setFillColor(MILL);c.setLineWidth(.75);c.setFont('Body',7)
+        c.setStrokeColor(MILL);c.setFillColor(MILL);c.setLineWidth(.25);c.setFont('Body',7)
         if not cut['verified_rectangle']:
             c.setDash(3,2)
             for e in cut['trajectory']:curve(c,e,lambda p:project(convert(p)))
@@ -236,7 +244,7 @@ def baseline_dimensions(c,project,entries,axis,left,bottom):
         offset=(bottom if axis==0 else left)-27-index*gap
         dimension(c,origin,endpoint,offset,fmt(value),axis==1,color=colors[0])
         if len(colors)>1:
-            c.saveState();c.setLineWidth(.7)
+            c.saveState();c.setLineWidth(.3)
             for i,color in enumerate(colors[1:]):
                 c.setStrokeColor(color)
                 if axis==0:
@@ -247,7 +255,7 @@ def baseline_dimensions(c,project,entries,axis,left,bottom):
 
 
 def draw_band_marker(c,label,center,target):
-    c.saveState();c.setStrokeColor(INK);c.setFillColor(INK);c.setLineWidth(.6)
+    c.saveState();c.setStrokeColor(INK);c.setFillColor(INK);c.setLineWidth(.25)
     dx,dy=target[0]-center[0],target[1]-center[1];length=math.hypot(dx,dy)
     radius=max(7,pdfmetrics.stringWidth(str(label),'Body',7)/2+3)
     if length>radius+4:
@@ -269,10 +277,10 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     native=lambda p:project(convert(p))
     c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,base+area_height+39,'Face 2 / Spate — '+('întoarcere sus–jos' if flip=='y' else 'întoarcere stânga–dreapta') if back else 'Face 1 / Față — Zmax')
     if contour:
-        c.setStrokeColor(INK);c.setLineWidth(.6)
+        c.setStrokeColor(INK);c.setLineWidth(.25)
         for e in flatten(contour):curve(c,e,native)
     else:
-        c.setStrokeColor(INK);c.setLineWidth(.6)
+        c.setStrokeColor(INK);c.setLineWidth(.25)
         for a,b in edges:c.line(*native(a),*native(b))
     for loop in loops:
         c.setStrokeColor(THROUGH if loop['interior'] else INK)
@@ -284,7 +292,7 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     visible=face_holes(holes,back);positions=[]
     for h in visible:
         q=convert(h['position']);a=project(q);d=vector(h['direction']);color=h['color'];r=(h['diameter'] or 0)*scale/2
-        c.setStrokeColor(color);c.setFillColor(color);c.setLineWidth(.55)
+        c.setStrokeColor(color);c.setFillColor(color);c.setLineWidth(.25)
         if h['face'].startswith('Z'):c.circle(*a,max(r,.65),stroke=1,fill=0)
         else:
             # Native drill axis and diameter define the plan-view slot into the edge.
@@ -317,7 +325,7 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     grain=grain_vector(p)
     if grain:
         d=vector(grain);length=min(45,max(14,min(width,height)*scale*.3));nx,ny=-d[1],d[0]
-        c.setStrokeColor(HexColor('#777777'));c.setLineWidth(.5)
+        c.setStrokeColor(HexColor('#777777'));c.setLineWidth(.2)
         gx,gy=project([width*.5,height*.5])
         for offset in [-3,3]:c.line(gx-d[0]*length/2+nx*offset,gy-d[1]*length/2+ny*offset,gx+d[0]*length/2+nx*offset,gy+d[1]*length/2+ny*offset)
     contour_elements=(contour or {}).get('elements',[])

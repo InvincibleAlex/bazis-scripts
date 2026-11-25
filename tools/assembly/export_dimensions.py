@@ -86,7 +86,7 @@ def milling_for(panel,lo):
     return rows
 
 def dimension(c,a,b,offset,label,vertical=False,color=None):
-    c.saveState();c.setStrokeColorRGB(.28,.28,.28);c.setFillColorRGB(.15,.15,.15);c.setLineWidth(.35);c.setFont('Body',7)
+    c.saveState();c.setStrokeColorRGB(.28,.28,.28);c.setFillColorRGB(.15,.15,.15);c.setLineWidth(.2);c.setFont('Body',7)
     if color is not None:c.setStrokeColor(color);c.setFillColor(color)
     if vertical:
         x=offset;c.line(a[0],a[1],x-3,a[1]);c.line(b[0],b[1],x-3,b[1]);c.line(x,a[1],x,b[1])
