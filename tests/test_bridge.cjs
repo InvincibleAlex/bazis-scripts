@@ -37,6 +37,19 @@ const list=ok('list_objects',{recursive:true});assert.equal(list.total,3);
 const first=list.items.find(x=>x.name==='Verticală').object_id;
 const group=list.items.find(x=>x.name==='Corp test').object_id;
 const nested=list.items.find(x=>x.name==='Poliță').object_id;
+// Native band dimensions and contour association must preserve zero/false values.
+env.first.Butts={Count:2,0:{Material:'ABS 2x23',Sign:'edge-code',Thickness:2,Width:23,ClipPanel:false,Allowance:0,ElemIndex:0},1:{Material:'ABS .8',Thickness:0.8,Width:23,ClipPanel:true,ElemIndex:1}};
+env.first.Contour={Min:{x:10,y:20},Max:{x:110,y:220},Objects:[{IsLine:()=>true,AsLine:()=>({Pos1:{x:10,y:20},Pos2:{x:10,y:220}})},{IsLine:()=>false}]};
+const bands=ok('get_object',{object_id:first}).native_edge_bands;
+assert.equal(bands.complete,true);assert.equal(bands.count,2);
+assert.equal(bands.items[0].local_side,'X_min');assert.equal(bands.items[0].segment_length_mm,200);
+assert.equal(bands.items[0].properties.ClipPanel,false);assert.equal(bands.items[0].properties.Allowance,0);
+assert.equal(bands.items[0].properties.Sign,'edge-code');assert.equal(bands.items[1].local_side,null);
+env.first.Butts[1].ElemIndex=99;
+assert.equal(ok('get_object',{object_id:first}).native_edge_bands.complete,false);
+delete env.first.Butts;delete env.first.Contour;
+assert.equal(ok('get_object',{object_id:first}).native_edge_bands.available,false);
+
 env.first.Plastics={Count:1,Plastics:[{Material:'PAL layer',Thickness:18,Side:0,TextureOrientation:2,MaterialWidth:-1}]};
 const nativeLayer=ok('get_object',{object_id:first}).native_layers;
 assert.equal(nativeLayer.complete,true);assert.equal(nativeLayer.items[0].properties.Thickness,18);

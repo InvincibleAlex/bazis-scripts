@@ -167,6 +167,43 @@
         }
         return out;
     }
+    function readNativeEdgeBands(obj) {
+        var list=prop(obj,'Butts'),size=prop(list,'Count'),contour=prop(obj,'Contour');
+        var out={source:'BAZIS panel.Butts + panel.Contour',available:list!==null&&typeof list!=='undefined',count:null,items:[],complete:false,
+            coordinate_space:'panel local XY, mm',side_note:'X_min/X_max/Y_min/Y_max refer to the native panel contour, not global front/back or grain direction.'};
+        function xy(p){var x=prop(p,'x'),y=prop(p,'y');return typeof x==='number'&&isFinite(x)&&typeof y==='number'&&isFinite(y)?{x:x,y:y}:null;}
+        function near(a,b){return Math.abs(a-b)<0.01;}
+        if(typeof size!=='number'||!isFinite(size)||size<0||size!==Math.floor(size))return out;
+        out.count=size;out.complete=size<=1000;
+        var elements=prop(contour,'Objects')||contour,lo=xy(prop(contour,'Min')),hi=xy(prop(contour,'Max'));
+        out.contour_bounds_local_mm={min:lo,max:hi};
+        for(var i=0;i<Math.min(size,1000);i++){
+            var band=prop(list,i),row={index:i,properties:{},contour_element_index:null,local_side:null};
+            if(!band){row.error='Native edge band unavailable';out.complete=false;out.items.push(row);continue;}
+            ['Material','Sign','Thickness','Width','ClipPanel','Allowance','ElemIndex'].forEach(function(k){var v=prop(band,k);if(scalar(v)&&typeof v!=='undefined')row.properties[k]=v;});
+            var index=prop(band,'ElemIndex');row.contour_element_index=typeof index==='number'?index:null;
+            var elem=typeof index==='number'&&index>=0&&Math.floor(index)===index?prop(elements,index):null;
+            try{
+                if(elem&&typeof prop(elem,'IsLine')==='function'&&elem.IsLine()){
+                    var line=elem.AsLine(),a=xy(prop(line,'Pos1')),b=xy(prop(line,'Pos2'));
+                    row.contour_type='line';row.start_local_mm=a;row.end_local_mm=b;
+                    if(a&&b){
+                        row.segment_length_mm=Math.sqrt(Math.pow(a.x-b.x,2)+Math.pow(a.y-b.y,2));
+                        if(lo&&hi){
+                            if(near(a.x,lo.x)&&near(b.x,lo.x))row.local_side='X_min';
+                            else if(near(a.x,hi.x)&&near(b.x,hi.x))row.local_side='X_max';
+                            else if(near(a.y,lo.y)&&near(b.y,lo.y))row.local_side='Y_min';
+                            else if(near(a.y,hi.y)&&near(b.y,hi.y))row.local_side='Y_max';
+                        }
+                    }else out.complete=false;
+                }else if(elem){row.contour_type='nonlinear_or_unknown';row.contour_native_data=nativeData(elem,1,[]);}
+                else{row.geometry_error='Referenced contour element unavailable';out.complete=false;}
+            }catch(e){row.geometry_error=message(e);out.complete=false;}
+            if(typeof row.properties.Material!=='string'||typeof row.properties.Thickness!=='number'||row.contour_element_index===null)out.complete=false;
+            out.items.push(row);
+        }
+        return out;
+    }
     function snapshot(obj, indexes, details) {
         var out={object_id:register(obj,indexes), parent_id:indexes.length>1?parentHandle(indexes):null,
                  name:prop(obj,'Name'), child_count:count(obj), position_parent_mm:vector(prop(obj,'Position'))};
@@ -180,6 +217,7 @@
             out.native_holes=readNativeHoles(obj);
             out.native_hardware=readNativeHardware(obj);
             out.native_layers=readNativeLayers(obj);
+            out.native_edge_bands=readNativeEdgeBands(obj);
             out.edge_band_count=count(prop(obj,'Butts')); out.cut_count=count(prop(obj,'Cuts'));
             out.plastic_count=count(prop(obj,'Plastics'));
             out.methods={translate_global:typeof prop(obj,'TranslateGCS')==='function',rotate_global:typeof prop(obj,'RotateGCS')==='function',build:typeof prop(obj,'Build')==='function'};
