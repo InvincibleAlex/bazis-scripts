@@ -317,7 +317,7 @@
             var n=prop(mesh,'TriListsCount');out.tri_lists_count=typeof n==='number'?n:null;
             out.available=typeof n==='number'&&n>0;
             // Expose native surface API members for objects without the expected triangle lists.
-            if(!out.available){out.native_mesh_data=nativeData(mesh,1,[],{remaining:100});out.surface_api=inspectSurfaceAPI(mesh);}
+            if(!out.available)out.surface_api=inspectSurfaceAPI(mesh);
             out.geometry_reader='read_geometry';
         }catch(e){out.error=message(e);}
         return out;
