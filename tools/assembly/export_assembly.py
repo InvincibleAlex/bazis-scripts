@@ -250,7 +250,8 @@ def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=
     parts={p['id']:p for p in report['panels']}
     hardware=[p for p in report.get('hardware',[]) if not p.get('hidden') and p.get('bounds',{}).get('min') and p.get('bounds',{}).get('max')]
     assign_hardware(hardware,report['panels'])
-    for i,p in enumerate(hardware,1):p.update(kind='hardware',label=f'F{i:03d}')
+    from hardware_labels import assign_article_labels
+    assign_article_labels(report.get('hardware',[]))
     for i,p in enumerate(report['panels'],1):p['label']=i
     pages=0
     with tempfile.NamedTemporaryFile(suffix='.pdf',dir=output.parent,delete=False) as f:tmp=Path(f.name)
@@ -291,12 +292,17 @@ def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=
             if mh:
                 by_article={}
                 for fitting in mh:
-                    key=(fitting['name'].split('\r')[0],fitting.get('article',''))
+                    from hardware_labels import article_key
+                    key=article_key(fitting)
                     by_article.setdefault(key,[]).append(fitting)
-                fitting_groups=list(by_article.values())
+                fitting_groups=sorted(by_article.values(),key=lambda group:group[0]['label'])
                 for start in range(0,len(fitting_groups),8):
                     header(module['name']+' | Inventar feronerie',f'{len(mh)} articole')
-                    draw_scene(c,mp,None,[0,0,0],(25,65,355,440),mp+mh,hardware=mh,color_hardware=True)
+                    hardware_figure=(25,65,355,H-155)
+                    point=draw_scene(c,mp,None,[0,0,0],(60,65,285,H-155),mp+mh,hardware=mh,color_hardware=True)
+                    from inventory_layout import draw_numbered_labels
+                    shown=[instances[0] for instances in fitting_groups[start:start+8]]
+                    draw_numbered_labels(c,shown,point,hardware_figure,color=HARDWARE)
                     for j,instances in enumerate(fitting_groups[start:start+8]):
                         fitting=instances[0];yy=H-100-j*54
                         c.setFillColor(HARDWARE);c.setFont('Body',9);c.drawString(405,yy,f"{fitting['label']}   × {len(instances)}"+(f"   | {fitting['article']}" if fitting.get('article') else ''))

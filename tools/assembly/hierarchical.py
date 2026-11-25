@@ -19,6 +19,12 @@ def transform(items,fn):
     for p in items:
         q=copy.deepcopy(p)
         q['edges']=[[fn(a),fn(b)] for a,b in p.get('edges') or box_edges(p)]
+        for hole in q.get('holes',[]):
+            if hole.get('position_global_mm'):hole['position_global_mm']=fn(hole['position_global_mm'])
+            if hole.get('direction_global'):
+                zero=fn([0,0,0]);hole['direction_global']=[v-zero[i] for i,v in enumerate(fn(hole['direction_global']))]
+        if p.get('assembly_entry_directions'):
+            zero=fn([0,0,0]);q['assembly_entry_directions']=[[v-zero[i] for i,v in enumerate(fn(axis))] for axis in p['assembly_entry_directions']]
         if p.get('assembly_entry_points'):
             q['assembly_entry_points']=[fn(v) for v in p['assembly_entry_points']]
         points=[v for edge in q['edges'] for v in edge]
@@ -34,6 +40,13 @@ def transform(items,fn):
 def translated(items,offset):return transform(items,lambda p:[p[i]+offset[i] for i in range(3)])
 
 def insertion_axis(fitting):
+    directions=fitting.get('assembly_entry_directions') or []
+    directions=[d for d in directions if d and math.sqrt(sum(v*v for v in d))>1e-8]
+    if directions:
+        normalized=[[v/math.sqrt(sum(x*x for x in d)) for v in d] for d in directions]
+        reference=normalized[0]
+        if all(abs(sum(a*b for a,b in zip(reference,d)))>.995 for d in normalized):return reference
+        return None
     axis=fitting.get('insertion_axis')
     if axis and math.sqrt(sum(v*v for v in axis))>1e-8:
         length=math.sqrt(sum(v*v for v in axis));return [v/length for v in axis]
@@ -107,7 +120,8 @@ def pack(groups,gap=500):
 def prepare(report,plan):
     nodes={p['id']:p for p in report['nodes']};views={};groups={}
     for i,p in enumerate(report['panels'],1):p['label']=i
-    for i,p in enumerate(report.get('hardware',[]),1):p.update(kind='hardware',label=f'F{i:03d}')
+    from hardware_labels import assign_article_labels
+    assign_article_labels(report.get('hardware',[]))
     for module in plan['modules']:
         panels,fittings=module_items(report,module);frame=frame_for(module,panels,nodes)
         views[module['id']]=(in_frame(panels,frame),in_frame(fittings,frame))
@@ -260,8 +274,9 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None):
                     for q in matching:q['preparation_in']=active_module['name']
                     attached=copy.deepcopy([h for h in all_fittings if h.get('host_panel_id')==p['id']])
                     for h in attached:
-                        h['assembly_entry_points']=[hole['position_global_mm'] for hole in p.get('holes',[])
-                            if hole.get('coordinate_space_verified') and hole.get('fastener_article_id')==h['id']]
+                        receiving=[hole for hole in p.get('holes',[]) if hole.get('coordinate_space_verified') and hole.get('fastener_article_id')==h['id']]
+                        h['assembly_entry_points']=[hole['position_global_mm'] for hole in receiving]
+                        h['assembly_entry_directions']=[hole['direction_global'] for hole in receiving if hole.get('direction_global')]
                     view=plate_view(p,attached);plate=view[0];exploded=axial_explode(plate,view[1:])
                     refs=', '.join(str(q['label']) for q in matching)
                     page_header(f"{active_module['name']} | Pregătire placă — pasul {step_number:02d}",f"Placa {refs} - {p['designation']} - {p['name']}"+(f" | {len(matching)} buc." if len(matching)>1 else ''),[plate]+exploded)

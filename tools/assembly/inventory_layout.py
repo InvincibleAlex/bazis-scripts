@@ -17,12 +17,12 @@ def label_positions(parts,point,frame):
         for p,yy in zip(items,ys):result.append((p,(x+10 if side<0 else x+w-10,yy),side))
     return result
 
-def draw_numbered_labels(c,parts,point,frame):
-    c.saveState();c.setStrokeColor(BLUE);c.setLineWidth(.2)
+def draw_numbered_labels(c,parts,point,frame,color=BLUE):
+    c.saveState();c.setStrokeColor(color);c.setLineWidth(.2)
     positions=label_positions(parts,point,frame)
     for p,(x,y),side in positions:
         anchor=point(center(p));c.line(*anchor,x-side*18,y);c.line(x-side*18,y,x-side*8,y)
-        c.setFillColor(BLUE);c.circle(x,y,8,fill=1,stroke=0)
+        c.setFillColor(color);c.circle(x,y,8,fill=1,stroke=0)
         c.setFillColorRGB(1,1,1);c.setFont('Body',7);c.drawCentredString(x,y-2.4,str(p['label']))
     c.restoreState();return positions
 
