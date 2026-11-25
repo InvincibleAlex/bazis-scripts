@@ -19,3 +19,5 @@ Canturile folosesc ElemIndex nativ, cu repere numerice încercuite și săgeată
 Lângă PDF se salvează `.cote.json` cu raportul nativ și planul. Cartușul, orientarea personalizată și secțiunea/modelul de freză sunt lăsate deoparte.
 
 În vederile cotate, numărul plăcii apare în titlu, fără bulină centrală. Bulele din inventar sunt păstrate.
+
+Cotele de poziție sunt cote paralele complete, fiecare pornind din același punct de origine, pe linii succesive spre exterior. Antetul temporar din stânga sus este redus la 6/5 pt.

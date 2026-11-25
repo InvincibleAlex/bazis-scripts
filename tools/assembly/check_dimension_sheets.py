@@ -24,6 +24,18 @@ def example():
     return p
 
 class Sheets(unittest.TestCase):
+    def test_baseline_dimensions_start_at_one_origin_and_merge_duplicates(self):
+        from unittest.mock import Mock,patch
+        from dimension_sheets import baseline_dimensions
+        for axis in [0,1]:
+            with patch('dimension_sheets.dimension') as draw:
+                baseline_dimensions(Mock(),lambda p:[200+p[0],200+p[1]],[(75,FACE),(75.001,FACE),(100,EDGE)],axis,200,200)
+                self.assertEqual(draw.call_count,2)
+                calls=draw.call_args_list
+                self.assertEqual(calls[0].args[1],[200,200]);self.assertEqual(calls[1].args[1],[200,200])
+                self.assertEqual(calls[0].args[4],'75');self.assertEqual(calls[1].args[4],'100')
+                self.assertLess(calls[1].args[3],calls[0].args[3])
+
     def test_flip_on_longest_edge_and_view_origin(self):
         f,d,axis=view_transform([10,20],[610,320],True)
         self.assertEqual(axis,'y');self.assertEqual(f([30,50]),[20,270]);self.assertEqual(f([10,320]),[0,0]);self.assertEqual(d([1,2,3]),[1,-2,-3])

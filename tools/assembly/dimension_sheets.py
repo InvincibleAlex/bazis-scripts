@@ -219,32 +219,31 @@ def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
     return visible
 
 
-def ordinate_dimensions(c,project,entries,axis,left,bottom):
+def baseline_dimensions(c,project,entries,axis,left,bottom):
     groups=[]
     for value,color in sorted(entries,key=lambda item:item[0]):
         if groups and value-groups[-1][0][0]<=.01:groups[-1].append((value,color))
         else:groups.append([(value,color)])
-    lanes=[-1e9]*6
-    for group in groups:
-        value=dimension_positions(v for v,_ in group)[0]
-        colors=[]
+    # Each complete dimension starts at the same datum and has its own parallel line.
+    available=min(72,max(0,left-50)) if axis==1 else 72
+    gap=min(9,available/max(1,len(groups)-1))
+    origin=project([0,0])
+    for index,group in enumerate(groups):
+        value=dimension_positions(v for v,_ in group)[0];colors=[]
         for _,color in group:
             if color not in colors:colors.append(color)
-        label=fmt(value);a=project([value,0] if axis==0 else [0,value]);size=6
-        # Both axes use the coordinate's projected location to avoid collisions.
-        coordinate=a[axis];extent=pdfmetrics.stringWidth(label,'Body',size)+5
-        lane=next((i for i,end in enumerate(lanes) if coordinate-extent/2>end),min(range(6),key=lambda i:lanes[i]))
-        lanes[lane]=coordinate+extent/2
-        offset=(bottom if axis==0 else left)-52-lane*8
-        c.saveState();c.setLineWidth(.3);c.setStrokeColor(colors[0]);c.setFillColor(colors[0]);c.setFont('Body',size)
-        if axis==0:
-            c.line(a[0],a[1],a[0],offset);c.line(a[0]-2,offset-2,a[0]+2,offset+2);c.drawCentredString(a[0],offset-7,label)
-            for i,color in enumerate(colors[1:]):c.setStrokeColor(color);c.line(a[0]-3,offset-9-i*2,a[0]+3,offset-9-i*2)
-        else:
-            c.line(a[0],a[1],offset,a[1]);c.line(offset-2,a[1]-2,offset+2,a[1]+2)
-            c.translate(offset-3,a[1]);c.rotate(90);c.drawCentredString(0,0,label)
-            for i,color in enumerate(colors[1:]):c.setStrokeColor(color);c.line(-3,-2-i*2,3,-2-i*2)
-        c.restoreState()
+        endpoint=project([value,0] if axis==0 else [0,value])
+        offset=(bottom if axis==0 else left)-27-index*gap
+        dimension(c,origin,endpoint,offset,fmt(value),axis==1,color=colors[0])
+        if len(colors)>1:
+            c.saveState();c.setLineWidth(.7)
+            for i,color in enumerate(colors[1:]):
+                c.setStrokeColor(color)
+                if axis==0:
+                    mid=(origin[0]+endpoint[0])/2;c.line(mid-3,offset-2-i*2,mid+3,offset-2-i*2)
+                else:
+                    mid=(origin[1]+endpoint[1])/2;c.line(offset+2+i*2,mid-3,offset+2+i*2,mid+3)
+            c.restoreState()
 
 
 def draw_band_marker(c,label,center,target):
@@ -268,7 +267,7 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     top=bottom+height*scale;right=left+width*scale
     project=lambda p:(left+p[0]*scale,bottom+p[1]*scale)
     native=lambda p:project(convert(p))
-    c.setFillColor(INK);c.setFont('Body',9);c.drawString(35,base+area_height+39,'Face 2 / Spate — '+('întoarcere sus–jos' if flip=='y' else 'întoarcere stânga–dreapta') if back else 'Face 1 / Față — Zmax')
+    c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,base+area_height+39,'Face 2 / Spate — '+('întoarcere sus–jos' if flip=='y' else 'întoarcere stânga–dreapta') if back else 'Face 1 / Față — Zmax')
     if contour:
         c.setStrokeColor(INK);c.setLineWidth(.6)
         for e in flatten(contour):curve(c,e,native)
@@ -308,11 +307,11 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
             selected=box;break
         if selected:
             occupied.append(selected);c.setFillColor(h['color']);c.drawString(selected[0],selected[1]+1,h['tag'])
-    # One ordinate for each shared position, with staggered text on a common baseline.
+    # Baseline dimensions: one full dimension line per shared coordinate.
     for axis in [0,1]:
         entries=[(q[axis],h['color']) for h,q,a in positions if .01<q[axis]<(width if axis==0 else height)-.01]
         entries.extend((convert(q)[axis],THROUGH) for q in outer if .01<convert(q)[axis]<(width if axis==0 else height)-.01)
-        ordinate_dimensions(c,project,entries,axis,left,bottom)
+        baseline_dimensions(c,project,entries,axis,left,bottom)
     for i,loop in enumerate([loop for loop in loops if loop['interior']],1):annotate_loop(c,loop,convert,project,width,height,i)
     draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
     grain=grain_vector(p)
@@ -360,8 +359,8 @@ def write_sheets(report,output,progress=None):
             page+=1
             c.setPageSize((page_width,page_height))
             if progress:progress('Desen: Cotare față/spate placa '+str(p['label']))
-            c.setFillColor(INK);c.setFont('Body',17);c.drawString(35,page_height-38,f"Placa {p['label']:02} | {p.get('designation') or p['id']} | {p.get('name','')}"[:120])
-            c.setFont('Body',9);c.drawString(35,page_height-57,f"{fmt(hi[0]-lo[0])} × {fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
+            c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,page_height-38,f"Placa {p['label']:02} | {p.get('designation') or p['id']} | {p.get('name','')}"[:120])
+            c.setFont('Body',5);c.drawString(35,page_height-48,f"{fmt(hi[0]-lo[0])} × {fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
             for back,base in ([(False,685),(True,200)] if portrait else [(False,516),(True,205)]):
                 visible,convert=draw_view(c,*item[:-1],bands,back,base,portrait)
                 top=base+(430 if portrait else 235);table_x=600 if portrait else 865;table_width=page_width-table_x-35
