@@ -13,11 +13,12 @@ def section_label(index):
         result=chr(65+index%26)+result;index=index//26-1
         if index<0:return result
 
-def cross_section(panel,cut,loops):
+def cross_section(panel,cut,loops,fraction=.5):
     if not cut.get('verified_rectangle') or cut.get('through') or cut.get('face') not in ('Zmin','Zmax'):return None
     width=cut['width'];depth=cut['profile_depth'];thickness=panel['thickness']
     if width<=0 or depth<=0 or depth>thickness:return None
-    corners=cut['corners'];origin=[sum(q[i] for q in corners)/4 for i in range(2)]
+    corners=cut['corners']
+    origin=[(corners[0][i]+corners[3][i])/2+fraction*((corners[1][i]+corners[2][i]-corners[0][i]-corners[3][i])/2) for i in range(2)]
     normal=[(corners[3][i]-corners[0][i])/width for i in range(2)]
     intersections=[]
     def cross(a,b):return a[0]*b[1]-a[1]*b[0]
@@ -38,22 +39,50 @@ def cross_section(panel,cut,loops):
     return {'origin':origin,'normal':normal,'width':width,'depth':depth,'thickness':thickness,'face':cut['face'],
             'left':left,'right':right,'cropped_left':left>interval[0]+.001,'cropped_right':right<interval[1]-.001}
 
-def draw_section_mark(c,cut,convert,project):
+def draw_section_mark(c,cut,convert,project,panel=None,loops=None):
     section=cut.get('section_detail')
     if not section or cut.get('section_label') not in getattr(c,'section_labels_on_page',{cut.get('section_label')}):return
-    origin=section['origin'];normal=section['normal'];half=section['width']/2
-    a=project(convert([origin[i]-normal[i]*half for i in range(2)]));b=project(convert([origin[i]+normal[i]*half for i in range(2)]))
-    length=math.dist(a,b)
-    if length<.0001:return
-    u=[(b[i]-a[i])/length for i in range(2)];d=[-u[1],u[0]]
-    ends=[[a[i]-u[i]*10 for i in range(2)],[b[i]+u[i]*10 for i in range(2)]]
-    c.saveState();c.setStrokeColor(INK);c.setFillColor(INK);c.setLineWidth(.25);c.setDash([4,2,1,2]);c.line(*ends[0],*ends[1]);c.setDash();c.setFont('Body',7)
-    for q in ends:
-        tail=[q[i]-d[i]*15 for i in range(2)];c.line(*tail,*q)
+    layout=c.annotation_layout;c.saveState();c.setFont('Body',7)
+    corners=cut['corners'];half=section['width']/2;normal=section['normal']
+    along_start=[(corners[0][i]+corners[3][i])/2 for i in range(2)]
+    along_end=[(corners[1][i]+corners[2][i])/2 for i in range(2)]
+    fractions=sorted([i/50 for i in range(2,49)],key=lambda value:abs(value-.5))
+    selected=None
+    for fraction in fractions:
+        origin=[along_start[i]+fraction*(along_end[i]-along_start[i]) for i in range(2)]
+        a=project(convert([origin[i]-normal[i]*half for i in range(2)]));b=project(convert([origin[i]+normal[i]*half for i in range(2)]))
+        length=math.dist(a,b)
+        if length<.0001:continue
+        u=[(b[i]-a[i])/length for i in range(2)]
+        for extension in [10,6,3]:
+            ends=[[a[i]-u[i]*extension for i in range(2)],[b[i]+u[i]*extension for i in range(2)]]
+            for side in [1,-1]:
+                d=[-u[1]*side,u[0]*side];tails=[[q[i]-d[i]*15 for i in range(2)] for q in ends]
+                text_positions=[(tail[0]+3,tail[1]-4) for tail in tails]
+                text_boxes=[layout.text_box(c,x,y,cut['section_label']) for x,y in text_positions]
+                points=ends+tails;box=(min([q[0] for q in points]+[r[0] for r in text_boxes])-2,
+                    min([q[1] for q in points]+[r[1] for r in text_boxes])-2,
+                    max([q[0] for q in points]+[r[2] for r in text_boxes])+2,
+                    max([q[1] for q in points]+[r[3] for r in text_boxes])+2)
+                if not layout.marker_fits(box):continue
+                actual=cross_section(panel,cut,loops,fraction) if panel is not None else dict(section,origin=origin)
+                if not actual:continue
+                selected=(ends,tails,text_positions,d,u,box,actual,fraction);break
+            if selected:break
+        if selected:break
+    if selected is None:
+        c.restoreState();raise ValueError('Nu există loc liber pentru marcajul secțiunii '+cut['section_label'])
+    ends,tails,text_positions,d,u,box,actual,fraction=selected
+    cut['section_detail']=actual
+    layout.reserve(box);layout.section_marks.append({'label':cut['section_label'],'box':box,'fraction':fraction})
+    c.setStrokeColor(INK);c.setFillColor(INK);c.setLineWidth(.25);c.setDash([4,2,1,2]);c.line(*ends[0],*ends[1]);c.setDash()
+    for q,tail,(x,y) in zip(ends,tails,text_positions):
+        c.line(*tail,*q)
         c.line(*q,q[0]-d[0]*4+u[0]*1.5,q[1]-d[1]*4+u[1]*1.5)
         c.line(*q,q[0]-d[0]*4-u[0]*1.5,q[1]-d[1]*4-u[1]*1.5)
-        c.annotation_layout.draw(c,tail[0]+3,tail[1]-4,cut['section_label'],target=tail)
+        c.drawString(x,y,cut['section_label'])
     c.restoreState()
+
 
 def draw_detail(c,cut,x,top):
     data=cut['section_detail'];label=cut['section_label'];width=data['width'];depth=data['depth'];thickness=data['thickness']

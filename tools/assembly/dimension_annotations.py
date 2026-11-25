@@ -3,13 +3,32 @@ import math
 from reportlab.pdfbase import pdfmetrics
 
 class AnnotationLayout:
-    def __init__(self,bounds):self.bounds=bounds;self.boxes=[];self.placements=[]
+    def __init__(self,bounds):self.bounds=bounds;self.boxes=[];self.placements=[];self.strokes=[];self.section_marks=[]
     @staticmethod
     def overlaps(a,b,gap=1.5):return not(a[2]+gap<b[0] or b[2]+gap<a[0] or a[3]+gap<b[1] or b[3]+gap<a[1])
     def fits(self,box):
         left,bottom,right,top=self.bounds
         return box[0]>=left and box[1]>=bottom and box[2]<=right and box[3]<=top and not any(self.overlaps(box,old) for old in self.boxes)
     def reserve(self,box):self.boxes.append(box)
+    def add_stroke(self,c,start,end):
+        a,b,cc,d,e,f=c._currentMatrix
+        transform=lambda p:(a*p[0]+cc*p[1]+e,b*p[0]+d*p[1]+f)
+        self.strokes.append((transform(start),transform(end)))
+    @staticmethod
+    def stroke_hits_box(start,end,box,padding=1):
+        # Liang-Barsky segment clipping against a padded annotation rectangle.
+        lo_x,lo_y,hi_x,hi_y=box;lo_x-=padding;lo_y-=padding;hi_x+=padding;hi_y+=padding
+        dx=end[0]-start[0];dy=end[1]-start[1];low,high=0.,1.
+        for p,q in [(-dx,start[0]-lo_x),(dx,hi_x-start[0]),(-dy,start[1]-lo_y),(dy,hi_y-start[1])]:
+            if abs(p)<1e-12:
+                if q<0:return False
+            elif p<0:low=max(low,q/p)
+            else:high=min(high,q/p)
+            if low>high:return False
+        return True
+    def marker_fits(self,box):
+        return self.fits(box) and not any(self.stroke_hits_box(a,b,box) for a,b in self.strokes)
+
     def text_box(self,c,x,y,text,centered=False):
         width=pdfmetrics.stringWidth(str(text),c._fontname,c._fontsize)
         left=x-width/2 if centered else x

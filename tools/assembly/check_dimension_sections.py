@@ -49,6 +49,35 @@ class Sections(unittest.TestCase):
             self.assertIn('A–A',text);self.assertGreaterEqual(text.split().count('A'),2)
             self.assertNotIn('Xmin=',text)
         self.assertEqual(p,before)
+    def test_section_moves_away_from_dimension_lines(self):
+        from io import BytesIO
+        from reportlab.pdfgen.canvas import Canvas
+        from dimension_annotations import AnnotationLayout
+        from dimension_sections import draw_section_mark
+        p=plate();cut=milling_for(p,[0,0])[0];cut['section_detail']=cross_section(p,cut,contour_data(p));cut['section_label']='A'
+        c=Canvas(BytesIO());c.annotation_layout=AnnotationLayout((0,0,800,500))
+        project=lambda q:[100+q[0]*4,100+q[1]*4]
+        c.annotation_layout.add_stroke(c,[300,0],[300,500])
+        draw_section_mark(c,cut,lambda q:q,project,p,contour_data(p))
+        mark=c.annotation_layout.section_marks[0]
+        self.assertNotEqual(mark['fraction'],.5)
+        self.assertFalse(c.annotation_layout.stroke_hits_box([300,0],[300,500],mark['box']))
+        self.assertNotEqual(cut['section_detail']['origin'][0],50)
+    def test_overlapping_grooves_get_separate_arrows_and_labels(self):
+        from io import BytesIO
+        from reportlab.pdfgen.canvas import Canvas
+        from dimension_annotations import AnnotationLayout
+        from dimension_sections import draw_section_mark
+        p=plate();base=milling_for(p,[0,0])[0]
+        c=Canvas(BytesIO());c.annotation_layout=AnnotationLayout((0,0,800,500))
+        for label in ['A','B','C']:
+            cut=copy.deepcopy(base);cut['section_detail']=cross_section(p,cut,contour_data(p));cut['section_label']=label
+            draw_section_mark(c,cut,lambda q:q,lambda q:[100+q[0]*4,100+q[1]*4],p,contour_data(p))
+        marks=c.annotation_layout.section_marks
+        self.assertEqual([mark['label'] for mark in marks],['A','B','C'])
+        for i,mark in enumerate(marks):
+            for other in marks[i+1:]:self.assertFalse(c.annotation_layout.overlaps(mark['box'],other['box']))
+
     def test_detail_opening_is_up_and_width_is_above_on_both_faces(self):
         from unittest.mock import patch
         from io import BytesIO

@@ -259,6 +259,8 @@ def aligned_dimension(c,a,b,offset,label,color):
     normal=[-dy/length,dx/length];a2=[a[i]+normal[i]*offset for i in range(2)];b2=[b[i]+normal[i]*offset for i in range(2)]
     c.saveState();c.setStrokeColor(color);c.setFillColor(color);c.setLineWidth(.2);c.setFont('Body',7)
     c.line(*a,*a2);c.line(*b,*b2);c.line(*a2,*b2)
+    if getattr(c,'annotation_layout',None):
+        for start,end in [(a,a2),(b,b2),(a2,b2)]:c.annotation_layout.add_stroke(c,start,end)
     for q in [a2,b2]:c.line(q[0]-2,q[1]-2,q[0]+2,q[1]+2)
     angle=math.degrees(math.atan2(dy,dx))
     if angle>90:angle-=180
@@ -401,8 +403,6 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
         baseline_dimensions(c,project,entries,axis,left,bottom)
     for i,loop in enumerate([loop for loop in loops if loop['interior']],1):annotate_loop(c,loop,convert,project,width,height,i)
     draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
-    for cut in cuts:
-        if cut.get('face')==('Zmin' if back else 'Zmax'):draw_section_mark(c,cut,convert,project)
     grain=grain_vector(p)
     if grain:
         d=vector(grain);length=min(45,max(14,min(width,height)*scale*.3));nx,ny=-d[1],d[0]
@@ -440,6 +440,9 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
         c.annotation_layout.reserve((marker[0]-8,marker[1]-8,marker[0]+8,marker[1]+8))
         band_markers.append(marker)
         draw_band_marker(c,band['tag'],marker,[xx,yy])
+        c.annotation_layout.add_stroke(c,marker,[xx,yy])
+    for cut in cuts:
+        if cut.get('face')==('Zmin' if back else 'Zmax'):draw_section_mark(c,cut,convert,project,p,loops)
     c.annotation_layout=None
     return visible,convert
 

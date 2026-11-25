@@ -88,6 +88,11 @@ def milling_for(panel,lo):
 def dimension(c,a,b,offset,label,vertical=False,color=None):
     c.saveState();c.setStrokeColorRGB(.28,.28,.28);c.setFillColorRGB(.15,.15,.15);c.setLineWidth(.2);c.setFont('Body',7)
     if color is not None:c.setStrokeColor(color);c.setFillColor(color)
+    layout=getattr(c,'annotation_layout',None)
+    if layout:
+        if vertical:segments=[(a,[offset-3,a[1]]),(b,[offset-3,b[1]]),([offset,a[1]],[offset,b[1]])]
+        else:segments=[(a,[a[0],offset-3]),(b,[b[0],offset-3]),([a[0],offset],[b[0],offset])]
+        for start,end in segments:layout.add_stroke(c,start,end)
     if vertical:
         x=offset;c.line(a[0],a[1],x-3,a[1]);c.line(b[0],b[1],x-3,b[1]);c.line(x,a[1],x,b[1])
         for y in [a[1],b[1]]:c.line(x-2,y-2,x+2,y+2)
