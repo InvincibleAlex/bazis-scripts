@@ -58,5 +58,5 @@ assert([...files.entries()].some(([p,v])=>p.endsWith('.log')&&v.includes('BAZIS 
 assert.equal(shellCalls,2,'save dialog and terminal launch only');assert.equal(alerts.length,0);
 assert.equal(report.panels[0].native_contour.complete,true);
 assert.equal(report.panels[0].native_contour.elements.length,4);
-assert(report.hardware.every(h=>h.edges.length===0));
-console.log('Native dimension export: contour, drilling, no hardware geometry, no model edits, independent worker OK.');
+assert(report.hardware.some(h=>h.edges.length>0));
+console.log('Native dimension export: contour, drilling, hardware overview geometry, no model edits, independent worker OK.');

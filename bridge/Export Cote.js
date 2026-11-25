@@ -199,7 +199,7 @@
    var article=!isPanel&&!hole&&(/\r\s*\S/.test(name)||(!count&&/surub|\u0219urub|diblu|balama|glisier|picior|clem|m\u00e2ner|maner|suport|t\u0103lpici|talpici/i.test(name)));
    if(composite||article){
     progress('Feronerie '+visited+': '+name.replace(/\r/g,' | ')+' - identificare pentru gaurire');
-    var b=validBounds(o),geometry={edges:[],approximate_components:0,nativeComponents:0,native_edge_components:0,insertion_axis:null},connected=[];
+    var b=validBounds(o),geometry=hardwareGeometry(o),connected=[];
     // Do not search the entire model for every fitting. Receiving panels are
     // assigned once below by native NewHoleDrilling, using Body/Fastener UIDs.
     hardware.push({id:id,uid:get(o,'UID'),parent:item.parent,ancestors:item.ancestors,name:name,article:name.indexOf('\r')>=0?name.split('\r').slice(1).join(' ').trim():'',designation:text(get(o,'Designation')),hidden:false,source_hidden:hidden,bounds:b||{min:null,max:null},edges:geometry.edges,approximate_components:geometry.approximate_components,native_edge_components:geometry.native_edge_components,insertion_axis:geometry.insertion_axis,connected_panel_uids:connected});

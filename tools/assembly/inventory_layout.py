@@ -26,19 +26,19 @@ def draw_numbered_labels(c,parts,point,frame,color=BLUE):
         c.setFillColorRGB(1,1,1);c.setFont('Body',7);c.drawCentredString(x,y-2.4,str(p['label']))
     c.restoreState();return positions
 
-def inventory_rows(parts,width):
+def inventory_rows(parts,width,font_size=6.5):
     rows=[]
     for p in parts:
         code=p.get('designation') or p['id'];dims=f"{p['width']:g} × {p['height']:g} × {p['thickness']:g}"
         line=f"{code}   {dims}   {p['name']}"
-        lines=simpleSplit(line,'Body',6.5,width-25)
+        lines=simpleSplit(line,'Body',font_size,width-25)
         rows.append((p,lines,max(14,len(lines)*8+5)))
     return rows
 
-def draw_inventory_rows(c,rows,x,y,width):
+def draw_inventory_rows(c,rows,x,y,width,font_size=6.5):
     c.saveState()
     for p,lines,height in rows:
-        c.setFillColor(BLUE);c.setFont('Body',6.5);c.drawString(x,y,f"{p['label']:02d}")
+        c.setFillColor(BLUE);c.setFont('Body',font_size);c.drawString(x,y,f"{p['label']:02d}")
         c.setFillColorRGB(.12,.12,.12)
         for i,line in enumerate(lines):c.drawString(x+22,y-i*8,line)
         c.setStrokeColor(HexColor('#d5d9dc'));c.setLineWidth(.2);c.line(x,y-height+5,x+width,y-height+5)

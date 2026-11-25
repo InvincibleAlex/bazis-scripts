@@ -243,7 +243,7 @@ def draw_scene(c,parts,new_id,offset,frame,all_parts,hardware=None,mark_hardware
         c.setFillColorRGB(1,1,1);c.setFont('Body',9);c.drawCentredString(a[0],a[1]+14,str(p['label']))
     return pt
 
-def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=None,progress=None):
+def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=None,progress=None,inventory_only=False):
     W,H=842,595
     font=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'/'arial.ttf'
     pdfmetrics.registerFont(TTFont('Body',str(font)))
@@ -279,17 +279,17 @@ def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=
             pending=list(mp)
             while pending:
                 header(module['name']+' | Inventar plăci','')
-                table_x=W*.49;table_width=W-table_x-30;available=H-155;batch=[];used=0
-                for row in inventory_rows(pending,table_width):
+                table_x=W*(.62 if inventory_only else .49);table_width=W-table_x-30;available=H-155;batch=[];used=0
+                for row in inventory_rows(pending,table_width,font_size=6 if inventory_only else 6.5):
                     if batch and (used+row[2]>available or len(batch)>=32):break
                     batch.append(row);used+=row[2]
                 shown=[row[0] for row in batch];pending=pending[len(batch):]
                 figure=(30,65,table_x-50,H-155)
                 point=draw_scene(c,mp,None,[0,0,0],(figure[0]+35,figure[1],figure[2]-70,figure[3]),mp+mh,hardware=mh,color_hardware=True)
                 draw_numbered_labels(c,shown,point,figure)
-                draw_inventory_rows(c,batch,table_x,H-95,table_width)
+                draw_inventory_rows(c,batch,table_x,H-95,table_width,font_size=6 if inventory_only else 6.5)
                 c.showPage()
-            if mh:
+            if mh and not inventory_only:
                 by_article={}
                 for fitting in mh:
                     from hardware_labels import article_key
@@ -310,6 +310,7 @@ def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=
                         for k,line in enumerate(simpleSplit(fitting['name'].split('\r')[0],'Body',8,300)[:3]):c.drawString(405,yy-12-k*10,line)
                         draw_scene(c,[],None,[0,0,0],(725,yy-35,85,42),[fitting],hardware=[fitting],color_hardware=True)
                     c.showPage()
+            if inventory_only:continue
             assembled=[]
             for i,operation in enumerate(display_steps(report,module),1):
                 step=operation['instances'][0];p=view_parts[step['panel_id']]

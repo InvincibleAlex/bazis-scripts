@@ -200,7 +200,7 @@ def plate_view(p,fittings):
     if lower>upper:normal=transform(normal,lambda v:[v[0],-v[1],-v[2]])
     return transform(normal,lambda v:[v[0],v[2],-v[1]])
 
-def write_hierarchical(report,output,plan,sample_module=None,progress=None):
+def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimensions=False):
     pdfmetrics.registerFont(TTFont('Body','C:/Windows/Fonts/arial.ttf'))
     views,groups=prepare(report,plan);nodes={p['id']:p for p in report['nodes']}
     selected=[m for m in plan['modules'] if sample_module is None or m['name']==sample_module]
@@ -235,7 +235,7 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None):
         c.save();fragments.append(intro)
         assembled_pages=len(PdfReader(intro).pages)
         for module in selected:
-            duplicate=repetitions.get(module['id'])
+            duplicate=None if dimensions else repetitions.get(module['id'])
             if duplicate:
                 reference=module_ranges[duplicate['reference_module_id']]
                 duplicate['reference_pages']=list(reference)
@@ -265,6 +265,18 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None):
             if carcass:picture(module['name']+' | Carcasă - explozie plăci',exploded_boards(carcass,fittings))
             c.save();fragments.append(preparation_file)
             body=Path(temp)/f"body-{module['id']}.pdf"
+            if dimensions:
+                write_pdf(report,body,dict(plan,modules=[module]),work_views=views,include_final=False,progress=progress,inventory_only=True)
+                fragments.append(body)
+                from export_dimensions import write_dimensions
+                dimensions_file=Path(temp)/f"dimensions-{module['id']}.pdf"
+                ids={p['id'] for p in panels}
+                native_panels=[p for p in report['panels'] if p['id'] in ids]
+                write_dimensions(dict(report,panels=native_panels),dimensions_file,progress)
+                fragments.append(dimensions_file)
+                assembled_pages+=sum(len(PdfReader(f).pages) for f in [preparation_file,body,dimensions_file])
+                module_ranges[module['id']]=(module_start,assembled_pages)
+                continue
             def prepare_step(target,active_module,step_number,added,all_panels,all_fittings,page_header):
                 for instances in preparation_batches(added):
                     p=instances[0];code=p.get('designation') or ('instance',p['id'])

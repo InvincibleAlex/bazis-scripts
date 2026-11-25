@@ -35,6 +35,11 @@ class Dimensions(unittest.TestCase):
         with self.assertRaises(ValueError):holes_for(p,[0,0])
     def test_unconfirmed_footprint_is_not_drawn_as_confirmed(self):
         p=plate();p['edges']=[];self.assertFalse(milling_for(p,[0,0])[0]['verified_rectangle'])
+    def test_drawing_dimensions_merge_numeric_noise_only(self):
+        from export_dimensions import dimension_positions
+        self.assertEqual(dimension_positions([3,3.000001,66.999,67,93]),[3,67,93])
+        self.assertEqual(dimension_positions([41.343,41.343001,41.4]),[41.3430005,41.4])
+
     def test_pdf_contains_dimensions_and_never_hardware(self):
         p=plate();before=copy.deepcopy(p)
         with tempfile.TemporaryDirectory() as t:
