@@ -16,7 +16,7 @@
         function psText(value){return "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+Buffer.from(value,'utf8').toString('base64')+"'))";}
         var terminal="& ("+psText(consoleScript)+") -LogPath ("+psText(exportLog)+") -StatePath ("+psText(exportState)+")";
         var encoded=Buffer.from(terminal,'utf16le').toString('base64');
-        var launcher="$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell.exe' -WindowStyle Normal -ArgumentList @('-NoProfile','-NoExit','-ExecutionPolicy','Bypass','-EncodedCommand','"+encoded+"'); $ack="+psText(exportState+'.opened')+"; $until=[DateTime]::UtcNow.AddSeconds(12); while(!(Test-Path -LiteralPath $ack) -and [DateTime]::UtcNow -lt $until){Start-Sleep -Milliseconds 100}; if(!(Test-Path -LiteralPath $ack)){throw 'Terminalul de progres nu a pornit.'}";
+        var launcher="$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell.exe' -WindowStyle Normal -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','"+encoded+"'); $ack="+psText(exportState+'.opened')+"; $until=[DateTime]::UtcNow.AddSeconds(12); while(!(Test-Path -LiteralPath $ack) -and [DateTime]::UtcNow -lt $until){Start-Sleep -Milliseconds 100}; if(!(Test-Path -LiteralPath $ack)){throw 'Terminalul de progres nu a pornit.'}";
         require('child_process').execFileSync('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(launcher,'utf16le').toString('base64')],{stdio:'ignore',windowsHide:true,timeout:15000});
         exportStatus('Citire placi si dubluri din modelul BAZIS...');
         if (typeof Model === 'undefined' || !Model) throw new Error('Model nu este disponibil in acest context/eveniment.');
