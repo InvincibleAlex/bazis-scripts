@@ -58,7 +58,7 @@ with zipfile.ZipFile(template) as original,zipfile.ZipFile(authored) as source:
             sys.path.insert(0,str(Path(__file__).resolve().parent))
             from size_piece_inputs import size_inputs
             first=sizing['first_row'];columns=list(sizing['columns'])
-            text,styles=size_inputs(text,styles,first,first+len(data['rows'])-1,columns,sizing['material'],sizing['notes'])
+            text,styles=size_inputs(text,styles,first,first+len(data['rows'])-1,columns,sizing['material'],sizing['notes'],resize_columns=sizing.get('resize_columns',True))
         ET.fromstring(text)
         changes[filename]=text.encode('utf-8')
     if styles!=original.read('xl/styles.xml').decode('utf-8'):changes['xl/styles.xml']=styles.encode('utf-8')
