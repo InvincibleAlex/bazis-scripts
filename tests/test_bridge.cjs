@@ -89,6 +89,14 @@ assert(surfaceAPI.members.some(x=>x.name==='FillElements'&&x.kind==='method'));
 assert(surfaceAPI.members.some(x=>x.name==='HiddenSurfaceTest'&&x.kind==='accessor'));
 assert.equal(surfaceCalls,0);Object.setPrototypeOf(env.first,oldPrototype);delete env.first.FillElements;
 
+// Native contour hierarchy is retained without assuming every child is a hole.
+env.first.Contours={Count:0,ChildCount:1,Children:[{Count:1,Objects:[{IsCircle:()=>true,AsCircle:()=>({Center:{x:30,y:40},CirRadius:8})}],ChildCount:0}]};
+const contourTree=ok('get_object',{object_id:first}).native_panel_contour.all_contours.tree;
+assert.equal(contourTree.complete,true);assert.equal(contourTree.children[0].geometry.elements[0].radius_mm,8);
+env.first.Contours.Children[0]=env.first.Contours;
+assert.equal(ok('get_object',{object_id:first}).native_panel_contour.all_contours.tree.complete,false);
+delete env.first.Contours;
+
 // Native band dimensions and contour association must preserve zero/false values.
 env.first.Butts={Count:2,0:{Material:'ABS 2x23',Sign:'edge-code',Thickness:2,Width:23,ClipPanel:false,Allowance:0,ElemIndex:0},1:{Material:'ABS .8',Thickness:0.8,Width:23,ClipPanel:true,ElemIndex:1}};
 env.first.Contour={Min:{x:10,y:20},Max:{x:110,y:220},Objects:[{IsLine:()=>true,AsLine:()=>({Pos1:{x:10,y:20},Pos2:{x:10,y:220}})},{IsLine:()=>false}]};
@@ -157,6 +165,9 @@ let drillBody;
 env.context.NewHoleDrilling=()=>({AddBody:o=>{drillBody=o;},AddFasteners:()=>{},DrillHoles:()=>{},Bodies:{FindBodyInfo:o=>({Holes:{Count:1,Items:[{Body:o,Fastener:env.nested,Diameter:5,Depth:14,Radius:2.5,DrillMode:2,Position:{x:1,y:2,z:0},Direction:{x:0,y:0,z:1}}]}})}});
 const beforeDrilling={...env.counters};
 const calculated=ok('get_panel_drilling',{object_ids:[first],model_token:token});
+assert.equal(calculated.fastener_panel_links[0].fastener_object_id,nested);
+assert.equal(calculated.fastener_panel_links[0].panels[0].panel_object_id,first);
+assert.deepEqual(calculated.fastener_panel_links[0].panels[0].hole_indices,[0]);
 assert.equal(drillBody,env.first);assert.equal(calculated.hole_count,1);
 assert.equal(calculated.panels[0].holes[0].body_uid,env.first.UID);
 assert.equal(calculated.panels[0].holes[0].fastener_uid,env.nested.UID);

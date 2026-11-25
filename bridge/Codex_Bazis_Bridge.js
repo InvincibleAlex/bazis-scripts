@@ -261,11 +261,31 @@
         }
         return out;
     }
+    function readNativeContourTree(node,depth,seen,budget) {
+        var out={depth:depth,children:[],complete:false};
+        if(!node){out.available=false;return out;}
+        if(depth>8||--budget.nodes<0){out.truncated=true;return out;}
+        if(seen.indexOf(node)>=0){out.repeated_reference=true;return out;}
+        seen=seen.concat([node]);out.available=true;
+        out.geometry=readNativeContour(node,0,budget.elements);
+        var n=prop(node,'ChildCount'),children=prop(node,'Children');
+        out.native_child_count=typeof n==='number'?n:null;
+        out.complete=out.geometry.complete;
+        if(typeof n==='number'&&isFinite(n)&&n>=0&&Math.floor(n)===n){
+            for(var i=0;i<Math.min(n,1000);i++){
+                var childNode=prop(children,i),branch=readNativeContourTree(childNode,depth+1,seen,budget);
+                branch.child_index=i;out.children.push(branch);if(!branch.complete)out.complete=false;
+            }
+            if(n>1000)out.complete=false;
+        }
+        return out;
+    }
     function readPanelContour(obj) {
         var out={source:'BAZIS panel.Contour',coordinate_space:'panel local XY, mm',
             note:'Native element order and indices retained for Butts.ElemIndex. Unsupported curves are explicit; no bounding rectangle substitution.',
             contour:readNativeContour(prop(obj,'Contour'),0,{remaining:10000}),properties:{}};
         ['ContourWidth','ContourHeight','Thickness','LowZ','HighZ','MiddleZ','Bent','IsContourRectangle','TextureOrientation','TextureAngle','FrontFace'].forEach(function(k){var v=prop(obj,k);if(scalar(v)&&typeof v!=='undefined')out.properties[k]=v;});
+        out.all_contours={source:"BAZIS panel.Contours / Children",role_note:"Native hierarchy retained. Child depth alone is not a confirmed hole classification.",tree:readNativeContourTree(prop(obj,'Contours'),0,[],{nodes:1000,elements:{remaining:10000}})};
         out.complete=out.contour.complete;
         if(out.properties.Bent===true){out.complete=false;out.note+=' Bent panel: flat XY contour alone does not describe the bent surface.';}
         return out;
@@ -496,7 +516,8 @@
         if(p.model_token!==modelToken())fail('MODEL_CHANGED','Read get_model again');
         var ts=targets(p);
         requireFunction(typeof NewHoleDrilling!=='undefined'?NewHoleDrilling:null,'NewHoleDrilling');
-        var drilling=NewHoleDrilling(),panels=[],total=0;
+        var drilling=NewHoleDrilling(),panels=[],total=0,links={},modelRows=scan(requireModel(),[],true);
+        function handleRef(ref){if(!ref)return null;var uid=identity(ref);for(var k=0;k<modelRows.length;k++)if(modelRows[k].obj===ref||(uid!==null&&identity(modelRows[k].obj)===uid))return register(modelRows[k].obj,modelRows[k].indexes);return null;}
         requireFunction(prop(drilling,'AddBody'),'HoleDrilling.AddBody');
         requireFunction(prop(drilling,'AddFasteners'),'HoleDrilling.AddFasteners');
         requireFunction(prop(drilling,'DrillHoles'),'HoleDrilling.DrillHoles');
@@ -513,6 +534,17 @@
                 var row={index:i,body_uid:identity(prop(hole,'Body')),fastener_uid:identity(prop(hole,'Fastener')),
                     fastener_name:prop(prop(hole,'Fastener'),'Name'),properties:{},position_raw:vector(prop(hole,'Position')),direction_raw:vector(prop(hole,'Direction'))};
                 ['Diameter','Radius','Depth','DrillMode'].forEach(function(k){var v=prop(hole,k);if(scalar(v)&&typeof v!=='undefined')row.properties[k]=v;});
+                row.fastener_object_id=handleRef(prop(hole,'Fastener'));
+                row.body_object_id=handleRef(prop(hole,'Body'));
+                var linkKey=row.fastener_object_id||(row.fastener_uid!==null?'uid:'+row.fastener_uid:null);
+                if(linkKey){
+                    if(!links[linkKey])links[linkKey]={fastener_object_id:row.fastener_object_id,fastener_uid:row.fastener_uid,fastener_name:row.fastener_name,panels:[]};
+                    var relation=null;
+                    for(var li=0;li<links[linkKey].panels.length;li++)if(links[linkKey].panels[li].panel_object_id===t.id)relation=links[linkKey].panels[li];
+                    if(!relation){relation={panel_object_id:t.id,panel_uid:identity(t.obj),hole_indices:[]};links[linkKey].panels.push(relation);}
+                    relation.hole_indices.push(i);
+                }
+
                 row.contour_element_count=prop(prop(hole,'Contour'),'Count');
                 if(row.position_raw&&typeof prop(t.obj,'ToGlobal')==='function')row.position_panel_to_global_candidate=vector(t.obj.ToGlobal(prop(hole,'Position')));
                 if(row.direction_raw&&typeof prop(t.obj,'NToGlobal')==='function')row.direction_panel_to_global_candidate=vector(t.obj.NToGlobal(prop(hole,'Direction')));
@@ -520,7 +552,8 @@
             }
             panels.push(record);
         });
-        return {source:'BAZIS NewHoleDrilling / Bodies.FindBodyInfo',panel_count:panels.length,hole_count:total,panels:panels,
+        return {source:'BAZIS NewHoleDrilling / Bodies.FindBodyInfo',panel_count:panels.length,hole_count:total,panels:panels,fastener_panel_links:Object.keys(links).map(function(k){return links[k];}),
+            relation_scope:'Native drilled-hole Fastener/Body references, only among requested panels. Accessories without calculated holes are not covered; no proximity inference.',
             coordinate_note:'Calculated holes associated by BAZIS. Validate raw versus body-local coordinates before rendering.'};
     };
     // Read existing native tessellation only. Never Build/Triangulate the model.
