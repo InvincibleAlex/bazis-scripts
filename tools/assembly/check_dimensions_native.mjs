@@ -20,13 +20,15 @@ const nativeFitting={UID:77,Name:'Native screw\rTEST',GabMin:{x:9,y:19,z:30},Gab
 const hidden={Name:'Hidden group',Visible:false,Count:1,Objects:[{...panel,Name:'Hidden panel'}]};
 let report,alerts=[],model={Name:'Model',Count:1,Objects:[{Name:'M1',Count:5,Objects:[panel,hardware,hidden,hinge,nativeFitting]}]};
 for(let i=0;i<40;i++)model.Objects[0].Objects.push({Name:'Dummy '+i,Count:0});model.Objects[0].Count=model.Objects[0].Objects.length;
+panel.TextureOrientation=2;
+panel.Contours={...panel.Contour,ChildCount:1,Children:[{Count:1,Objects:[{IsCircle:()=>true,AsCircle:()=>({Center:{x:100,y:100},CirRadius:20})}],ChildCount:0}]};
 const before=JSON.stringify(model),files=new Map();
 const fakeFs={existsSync:()=>true,readFileSync:()=>JSON.stringify({python:'python'}),writeFileSync:(p,data)=>{files.set(p,data);if(p.endsWith('.json'))report=JSON.parse(data);},appendFileSync:(p,data)=>files.set(p,(files.get(p)||'')+data),unlinkSync:p=>files.delete(p),statSync:()=>({size:10})};
 let shellCalls=0;
 const cp={execFileSync:(exe,args,options)=>{assert.equal(exe,'powershell.exe','PDF generation must not block the native script');shellCalls++;const command=Buffer.from(args[args.length-1],'base64').toString('utf16le');if(shellCalls===1){assert(command.includes('Start-Process')&&command.includes('$ack='),'terminal must start before the save dialog');assert.equal(options.stdio,'ignore','long-lived console must never inherit native blocking pipes');}return command.includes('SaveFileDialog')?Buffer.from('C:/assembly.pdf').toString('base64'):'';}};
 const NewHoleDrilling=()=>({AddBody:()=>{},AddFasteners:()=>{},DrillHoles:()=>{},Bodies:{FindBodyInfo:o=>({Holes:{Count:1,Items:[{Body:o,Fastener:nativeFitting,Diameter:5,Radius:2.5,Depth:5,DrillMode:2,Position:{x:10,y:20,z:35},Direction:{x:1,y:0,z:0}}]}})}});
 const timers=[];let scheduled=0,continued=0,finished=0;const action={Continue:()=>continued++,Finish:()=>{finished++;action.OnFinish?.();}};
-vm.runInNewContext(source,{Model:model,ModelFilename:'C:/test.b3d',Action:action,setTimeout:fn=>{timers.push(fn);return ++scheduled;},clearTimeout:()=>{},NewHoleDrilling,NewVector:(x,y,z)=>({x,y,z}),Buffer,WeakSet,Date,process:{pid:123},alert:s=>alerts.push(s),require:k=>k==='fs'?fakeFs:k==='child_process'?cp:k==='os'?{homedir:()=>'/home',tmpdir:()=>'/tmp'}:path});
+vm.runInNewContext(source,{TextureOrientation:{None:0,Horizontal:1,Vertical:2},Model:model,ModelFilename:'C:/test.b3d',Action:action,setTimeout:fn=>{timers.push(fn);return ++scheduled;},clearTimeout:()=>{},NewHoleDrilling,NewVector:(x,y,z)=>({x,y,z}),Buffer,WeakSet,Date,process:{pid:123},alert:s=>alerts.push(s),require:k=>k==='fs'?fakeFs:k==='child_process'?cp:k==='os'?{homedir:()=>'/home',tmpdir:()=>'/tmp'}:path});
 assert.equal(report,undefined,'native script must yield before scanning');
 while(timers.length)timers.shift()();
 assert(scheduled>=3,'scan yields between batches');assert.equal(continued,1);assert.equal(finished,1);assert.equal(nativeLinkQueries,0);
@@ -59,4 +61,7 @@ assert.equal(shellCalls,2,'save dialog and terminal launch only');assert.equal(a
 assert.equal(report.panels[0].native_contour.complete,true);
 assert.equal(report.panels[0].native_contour.elements.length,4);
 assert(report.hardware.some(h=>h.edges.length>0));
+assert.equal(report.panels[0].appearance.orientation_name,'Vertical');
+assert.equal(report.panels[0].contour_tree.children[0].geometry.elements[0].radius,20);
+
 console.log('Native dimension export: contour, drilling, hardware overview geometry, no model edits, independent worker OK.');

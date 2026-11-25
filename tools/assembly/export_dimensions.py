@@ -79,7 +79,7 @@ def milling_for(panel,lo):
                     row['verification_note']='Amprenta secțiunii nu coincide cu vârfurile geometriei native';rows.append(row);continue
                 low=(panel.get('z_limits') or {}).get('LowZ',0);high=(panel.get('z_limits') or {}).get('HighZ',panel['thickness'])
                 face='Zmin' if abs(sz[0]-low)<1e-5 else 'Zmax' if abs(sz[1]-high)<1e-5 else 'profil interior'
-                row.update(verified_rectangle=True,corners=corners,x=min(p[0] for p in corners)-lo[0],y=min(p[1] for p in corners)-lo[1],
+                row.update(verified_rectangle=True,through=sz[0]<=low+.01 and sz[1]>=high-.01,corners=corners,x=min(p[0] for p in corners)-lo[0],y=min(p[1] for p in corners)-lo[1],
                     start=[a[0]+normal[0]*sx[0]-lo[0],a[1]+normal[1]*sx[0]-lo[1]],
                     end=[b[0]+normal[0]*sx[0]-lo[0],b[1]+normal[1]*sx[0]-lo[1]],length=length,width=sx[1]-sx[0],profile_depth=sz[1]-sz[0],face=face)
         rows.append(row)
@@ -142,101 +142,9 @@ def hole_labels(holes,project):
 
 
 def write_dimensions(report,output,progress=None):
-    pdfmetrics.registerFont(TTFont('Body','C:/Windows/Fonts/arial.ttf'))
-    panels=report.get('panels',[]);prepared=[]
-    for panel in panels:
-        lo,hi,contour,edges=geometry(panel);holes=holes_for(panel,lo);cuts=milling_for(panel,lo)
-        prepared.append((panel,lo,hi,contour,edges,holes,cuts))
-    total=sum(max(1,math.ceil(len(holes)/22),math.ceil(len(cuts)/3)) for _,_,_,_,_,holes,cuts in prepared)
-    c=canvas.Canvas(str(output),pagesize=(W,H));c.setTitle('Export Cote');page=0
-    for number,(p,lo,hi,contour,edges,holes,cuts) in enumerate(prepared,1):
-        width,height=hi[0]-lo[0],hi[1]-lo[1]
-        if width<=0 or height<=0:raise ValueError('Contur cu dimensiuni invalide')
-        copies=max(1,math.ceil(len(holes)/22),math.ceil(len(cuts)/3))
-        for part in range(copies):
-            page+=1
-            number=p.get("label",number)
-            if progress:progress('Desen: Cotare placa '+str(number))
-            c.setFillColor(HexColor('#172b3a'));c.setFont('Body',17);c.drawString(35,554,f'Placa {number:02} | {p.get("designation") or p["id"]} | {p.get("name","")}'[:98])
-            c.setFont('Body',9);c.drawString(35,535,f'{fmt(width)} × {fmt(height)} × {fmt(p["thickness"])} mm | {p.get("material","")}'[:135])
-            c.setFont('Body',8);c.drawString(35,519,'Vedere dinspre +Z local. Origine cote: Xmin/Ymin. Contur și prelucrări din date BAZIS.')
-            scale=min(460/width,310/height);left=130+(460-width*scale)/2;bottom=180+(310-height*scale)/2
-            project=lambda q:(left+(q[0]-lo[0])*scale,bottom+(q[1]-lo[1])*scale)
-            c.setStrokeColor(BLUE);c.setLineWidth(.65);unsupported=0
-            if contour:
-                for e in flatten(contour):unsupported+=not curve(c,e,project)
-            else:
-                for a,b in edges:c.line(*project(a),*project(b))
-            cx,cy=project([(lo[0]+hi[0])/2,(lo[1]+hi[1])/2])
-            c.setFillColor(BLUE);c.circle(cx,cy,9,stroke=0,fill=1)
-            c.setFillColorRGB(1,1,1);c.setFont('Body',8);c.drawCentredString(cx,cy-3,str(number))
-            dimension(c,project(lo),project([hi[0],lo[1]]),bottom-18,fmt(width))
-            dimension(c,project(lo),project([lo[0],hi[1]]),left-18,fmt(height),True)
-            c.setFillColor(HexColor('#172b3a'));c.setFont('Body',7);c.drawString(left-5,bottom-10,'0')
-            for hole in holes:
-                a=project(hole['position']);r=(hole['diameter'] or 0)*scale/2
-                c.setStrokeColorRGB(.1,.1,.1);c.setLineWidth(.45);c.setDash(2,2) if hole['face']=='Zmin' else c.setDash()
-                if hole['face'].startswith('Z') and r>0:c.circle(*a,r,stroke=1,fill=0)
-                c.setDash();c.line(a[0]-3,a[1],a[0]+3,a[1]);c.line(a[0],a[1]-3,a[0],a[1]+3)
-            c.setFont('Body',6)
-            for hole,tag_position in hole_labels(holes,project):c.drawString(*tag_position,hole['tag'])
-            for cut in cuts:
-                c.setStrokeColor(ORANGE);c.setLineWidth(.7)
-                if cut['verified_rectangle']:
-                    path=c.beginPath();path.moveTo(*project(cut['corners'][0]))
-                    for q in cut['corners'][1:]:path.lineTo(*project(q))
-                    path.close();c.drawPath(path)
-                    q=project(cut['corners'][0]);c.setFillColor(ORANGE);c.setFont('Body',8);c.drawString(q[0]+4,q[1]+9,cut['tag'])
-                    cut_min=[min(p[i] for p in cut['corners']) for i in range(2)]
-                    cut_max=[max(p[i] for p in cut['corners']) for i in range(2)]
-                    if abs(cut_max[1]-cut_min[1]-cut['length'])<.001:
-                        dimension(c,project([cut_min[0],cut_min[1]]),project([cut_max[0],cut_min[1]]),project(hi)[1]+36,'l '+fmt(cut['width']),color=ORANGE)
-                        if cut_min[1]>lo[1]+.001:dimension(c,project([hi[0],lo[1]]),project([hi[0],cut_min[1]]),project(hi)[0]+30,fmt(cut_min[1]-lo[1]),True,color=ORANGE)
-                        near_right=hi[0]-cut_max[0]<cut_min[0]-lo[0]
-                        edge=hi[0] if near_right else lo[0];groove=cut_max[0] if near_right else cut_min[0]
-                        dimension(c,project([groove,hi[1]]),project([edge,hi[1]]),project(hi)[1]+18,fmt(abs(edge-groove)),color=ORANGE)
-                        if cut['length']<height-.001:dimension(c,project([hi[0],cut_min[1]]),project([hi[0],cut_max[1]]),project(hi)[0]+18,'L '+fmt(cut['length']),True,color=ORANGE)
-                    elif abs(cut_max[0]-cut_min[0]-cut['length'])<.001:
-                        dimension(c,project([cut_min[0],cut_min[1]]),project([cut_min[0],cut_max[1]]),left-24,'l '+fmt(cut['width']),True,color=ORANGE)
-                        if cut_min[0]>lo[0]+.001:dimension(c,project([lo[0],hi[1]]),project([cut_min[0],hi[1]]),project(hi)[1]+30,fmt(cut_min[0]-lo[0]),color=ORANGE)
-                        near_top=hi[1]-cut_max[1]<cut_min[1]-lo[1]
-                        edge=hi[1] if near_top else lo[1];groove=cut_max[1] if near_top else cut_min[1]
-                        dimension(c,project([hi[0],groove]),project([hi[0],edge]),project(hi)[0]+18,fmt(abs(edge-groove)),True,color=ORANGE)
-                        if cut['length']<width-.001:dimension(c,project([cut_min[0],hi[1]]),project([cut_max[0],hi[1]]),project(hi)[1]+18,'L '+fmt(cut['length']),color=ORANGE)
-                else:
-                    c.setDash(3,2)
-                    for e in cut['trajectory']:curve(c,e,project)
-                    c.setDash()
-            xs=dimension_positions(h['x'] for h in holes if 0<h['x']<width)
-            ys=dimension_positions(h['y'] for h in holes if 0<h['y']<height)
-            # All coordinates are tabulated; limit dimension ladders to preserve legibility.
-            for i,x in enumerate(xs[:5]):dimension(c,project(lo),project([lo[0]+x,lo[1]]),bottom-36-i*11,fmt(x))
-            for i,y in enumerate(ys[:5]):dimension(c,project(lo),project([lo[0],lo[1]+y]),left-36-i*11,fmt(y),True)
-            c.setFillColorRGB(.1,.1,.1);c.setFont('Body',8);c.drawString(610,486,'Găuri — coordonate și dimensiuni în mm')
-            columns=[610,631,662,693,724,750,777];head=['Nr.','X','Y','Z','Ø','Ad.','Intrare']
-            c.setFont('Body',6)
-            for x,t in zip(columns,head):c.drawString(x,471,t)
-            for i,h in enumerate(holes[part*22:(part+1)*22]):
-                yy=456-i*12;values=[h['tag'],fmt(h['x']),fmt(h['y']),fmt(h['z']),fmt(h['diameter']),fmt(h['depth']),h['face']]
-                for x,t in zip(columns,values):c.drawString(x,yy,t)
-                c.setStrokeColorRGB(.85,.85,.85);c.setLineWidth(.2);c.line(610,yy-3,807,yy-3)
-            c.setFillColor(ORANGE);c.setFont('Body',9);c.drawString(35,91,'Frezări — cote față de marginile conturului')
-            c.setFont('Body',6.5)
-            subset=cuts[part*3:(part+1)*3]
-            if not cuts:c.drawString(35,77,'Nicio frezare în lista nativă Cuts. Golurile din contur sunt desenate separat.')
-            for i,cut in enumerate(subset):
-                yy=77-i*17
-                if cut['verified_rectangle']:
-                    text=f'{cut["tag"]}: Xmin={fmt(cut["x"])}  Ymin={fmt(cut["y"])}  L={fmt(cut["length"])}  l={fmt(cut["width"])}  ad.={fmt(cut["profile_depth"])}  intrare {cut["face"]}'
-                    c.drawString(35,yy,text)
-                    c.drawString(420,yy,f'Debut ({fmt(cut["start"][0])}, {fmt(cut["start"][1])}) → final ({fmt(cut["end"][0])}, {fmt(cut["end"][1])})')
-                else:c.drawString(35,yy,f'{cut["tag"]}: profil de verificat; ad. nativă={fmt(cut["depth"])}; lățime={fmt(cut["width"])}; offset={fmt(cut["offset"])}. Amprenta nu este dedusă.')
-            c.setFillColorRGB(.35,.35,.35);c.setFont('Body',7)
-            note='Zmin: cerc întrerupt; Zmax: cerc continuu; muchie: reper la intrarea găurii.'
-            if unsupported:note+=' Elemente de contur nesuportate: '+str(unsupported)
-            c.drawString(35,22,note);c.drawRightString(807,22,f'{page} / {total}');c.showPage()
-    c.save()
-    return {'pages':page,'holes':sum(len(x[5]) for x in prepared),'panels':len(panels),'cuts':sum(len(x[6]) for x in prepared)}
+    from dimension_sheets import write_sheets
+    return write_sheets(report,output,progress)
+
 
 def main():
     import sys

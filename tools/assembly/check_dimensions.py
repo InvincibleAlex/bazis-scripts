@@ -46,7 +46,7 @@ class Dimensions(unittest.TestCase):
             out=Path(t)/'test.pdf';receipt=write_dimensions({'panels':[p],'hardware':[{'name':'HIDDEN HARDWARE'}]},out)
             text='\n'.join(x.extract_text() for x in PdfReader(out).pages)
             self.assertEqual(receipt,{'pages':1,'holes':1,'panels':1,'cuts':1})
-            self.assertIn('Xmin=0',text);self.assertIn('Ymin=10',text);self.assertIn('L=100',text);self.assertNotIn('HIDDEN HARDWARE',text)
+            self.assertNotIn('Xmin=',text);self.assertNotIn('Ymin=',text);self.assertNotIn('HIDDEN HARDWARE',text)
         self.assertEqual(p,before)
 
 if __name__=='__main__':unittest.main()

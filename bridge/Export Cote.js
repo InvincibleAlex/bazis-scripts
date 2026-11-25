@@ -66,6 +66,12 @@
    }
    return out;
   }
+  function readContourTree(node,depth,seen){
+   if(!node||depth>8||seen.indexOf(node)>=0)return null;
+   var next=seen.concat([node]),out={geometry:readContour(node,0),children:[]},n=get(node,'ChildCount'),children=get(node,'Children');
+   if(typeof n==='number'&&n>=0&&n<1000)for(var i=0;i<n;i++){var child=readContourTree(get(children,i),depth+1,next);if(child)out.children.push(child);}
+   return out;
+  }
   function panelMachining(panel){
    var collection=get(panel,'Cuts'),n=get(collection,'Count'),items=get(collection,'Cuts'),result=[];
    if(typeof n!=='number'||n<0||n>10000)return {source:'BAZIS panel.Cuts',complete:false,cuts:[]};
@@ -223,6 +229,11 @@
     p.local_bounds={min:point2(get(contour,'Min')),max:point2(get(contour,'Max'))};
     p.z_limits=scalarFields(o,['LowZ','HighZ','FrontFace']);
     p.dimension_properties=scalarFields(o,['Bent']);
+    p.contour_tree=readContourTree(get(o,'Contours'),0,[]);
+    p.appearance={properties:scalarFields(o,['TextureOrientation','TextureAngle','FrontFace']),orientation_enum:{}};
+    var grainEnum=typeof TextureOrientation!=='undefined'?TextureOrientation:null;
+    ['None','Horizontal','Vertical'].forEach(function(key){var value=get(grainEnum,key);if(typeof value==='number'||typeof value==='string'){p.appearance.orientation_enum[key]=value;if(value===get(o,'TextureOrientation'))p.appearance.orientation_name=key;}});
+
     if(typeof get(o,'ToGlobal')!=='function')throw Error('ToGlobal indisponibil pentru '+name);
     function globalPoint(q,z){return vec(o.ToGlobal(NewVector(q.x,q.y,z)));}
     if(typeof n==='number'&&n>0&&n<10000){
