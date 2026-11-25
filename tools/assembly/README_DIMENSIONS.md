@@ -16,10 +16,12 @@ Contururile închise sunt citite din Contour și arborele Contours/Children. Gol
 
 Canturile folosesc ElemIndex nativ, cu repere numerice încercuite și săgeată către muchia căntuită și tabel cu nume, denumire și grosime originale. Direcția texturii folosește enumerația nativă Horizontal/Vertical și este reprezentată prin două linii paralele în centrul plăcii; pentru None nu se inventează o direcție.
 
-Lângă PDF se salvează `.cote.json` cu raportul nativ și planul. Cartușul, orientarea personalizată și secțiunea/modelul de freză sunt lăsate deoparte.
+Lângă PDF se salvează `.cote.json` cu raportul nativ și planul. Cartușul și orientarea personalizată sunt lăsate deoparte.
 
 În vederile cotate, numărul plăcii apare în titlu, fără bulină centrală. Bulele din inventar sunt păstrate.
 
 Cotele de poziție sunt cote paralele complete, fiecare pornind din același punct de origine, pe linii succesive spre exterior. Antetul temporar din stânga sus este redus la 6/5 pt.
 
 Dimensiunile plăcii și cotele de contur sunt afișate cu maximum două zecimale, folosind rotunjire half-up (971,998 → 972). Găurile de găurire păstrează formatterul separat cu trei zecimale (200,75 → 200,75; 199,998 → 199,998); coordonatele native din raport nu se modifică. Golurile mici au cotele de dimensiune în exterior. Un sistem comun de amplasare evită suprapunerea textelor și repoziționează etichetele cu linii de legătură; nu omite etichete în zone aglomerate.
+
+Secțiuni locale A–A: pentru canale drepte cu amprentă și profil dreptunghiular confirmate nativ se desenează marcajul în vederea feței prelucrate și un detaliu mic în dreapta sus. Detaliul este hașurat și cotat cu lățimea, adâncimea și grosimea plăcii; deschiderea este orientată în sus, cu lățimea cotată deasupra. Limitele locale ale materialului provin din intersecția conturului nativ cu planul secțiunii. Detaliile suplimentare continuă pe foi separate. Tabelele de coordonate sunt aliniate la dreapta, la 10 mm de marginea foii/cadrului; se așază sub detalii, fără să se suprapună.

@@ -1,6 +1,8 @@
 """Two-sided native board sheets; all view transforms are presentation only."""
 import math
 from decimal import Decimal,ROUND_HALF_UP
+from reportlab.lib.units import mm
+from dimension_sections import cross_section,section_label,draw_detail,draw_section_mark,DETAIL_WIDTH,DETAIL_HEIGHT,DETAIL_GAP,SECTIONS_PER_PAGE
 from dimension_annotations import AnnotationLayout
 from pathlib import Path
 from reportlab.pdfgen import canvas
@@ -13,6 +15,8 @@ from export_dimensions import geometry,holes_for,milling_for,flatten,xy,curve,di
 FACE=HexColor('#0000ff');THROUGH=HexColor('#ff0000');EDGE=HexColor('#ff00ff')
 MILL=HexColor('#b15d12');INK=HexColor('#172b3a');BUBBLE=HexColor('#1668b2')
 PAGE_W,PAGE_H=1191,842
+PAGE_FRAME_INSET=0
+TABLE_RIGHT_PADDING=10*mm
 
 
 def board_fmt(value):
@@ -152,6 +156,19 @@ def content_column_widths(headers,rows,font,max_width):
     measured=[max(pdfmetrics.stringWidth(str(row[i]),'Body',font) for row in [headers]+rows)+8 for i in range(len(headers))]
     total=sum(measured)
     return measured if total<=max_width else [value*max_width/total for value in measured]
+
+
+def section_detail_positions(page_width,page_height,count):
+    right=page_width-PAGE_FRAME_INSET-TABLE_RIGHT_PADDING
+    start=right-count*DETAIL_WIDTH-max(0,count-1)*DETAIL_GAP
+    return [(start+i*(DETAIL_WIDTH+DETAIL_GAP),page_height-82) for i in range(count)]
+
+
+def coordinate_table_position(page_width,headers,rows,font=6.5,frame_inset=PAGE_FRAME_INSET):
+    right=page_width-frame_inset-TABLE_RIGHT_PADDING
+    max_width=240 if page_width<1000 else 300
+    width=sum(content_column_widths(headers,rows,font,max_width))
+    return right-width,width
 
 
 def table(c,x,top,width,headers,rows,widths,colors=None,font=6.5,row_height=10):
@@ -305,16 +322,18 @@ def draw_band_marker(c,label,center,target):
     c.setFillColor(INK);c.setFont('Body',7);c.drawCentredString(center[0],center[1]-2.4,str(label));c.restoreState()
 
 
-def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False,single=False):
+def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False,single=False,has_sections=False):
     width,height=hi[0]-lo[0],hi[1]-lo[1];convert,vector,flip=view_transform(lo,hi,back,long_horizontal=not single)
     if not single and height>width:width,height=height,width
     area_width,area_height=((440,790) if portrait else (650,490)) if single else ((440,400) if portrait else (650,205))
+    if has_sections:area_height-=100 if single else 40
     scale=min(area_width/width,area_height/height);left=120+(area_width-width*scale)/2;bottom=base+(area_height-height*scale)/2
     top=bottom+height*scale;right=left+width*scale
     project=lambda p:(left+p[0]*scale,bottom+p[1]*scale)
     native=lambda p:project(convert(p))
     c.annotation_layout=AnnotationLayout((20,base-110,(600 if portrait else 865)-15,base+area_height+33))
-    c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,base+area_height+39,'Face 2 / Spate — '+('întoarcere sus–jos' if flip=='y' else 'întoarcere stânga–dreapta') if back else 'Face 1 / Față — Zmax')
+    if has_sections:c.annotation_layout.reserve((20,c._pagesize[1]-190,c._pagesize[0]-TABLE_RIGHT_PADDING,c._pagesize[1]-70))
+    c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,base+area_height+(10 if has_sections else 39),'Face 2 / Spate — '+('întoarcere sus–jos' if flip=='y' else 'întoarcere stânga–dreapta') if back else 'Face 1 / Față — Zmax')
     if contour:
         c.setStrokeColor(INK);c.setLineWidth(.25)
         for e in flatten(contour):curve(c,e,native)
@@ -355,6 +374,8 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
         baseline_dimensions(c,project,entries,axis,left,bottom)
     for i,loop in enumerate([loop for loop in loops if loop['interior']],1):annotate_loop(c,loop,convert,project,width,height,i)
     draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
+    for cut in cuts:
+        if cut.get('face')==('Zmin' if back else 'Zmax'):draw_section_mark(c,cut,convert,project)
     grain=grain_vector(p)
     if grain:
         d=vector(grain);length=min(45,max(14,min(width,height)*scale*.3));nx,ny=-d[1],d[0]
@@ -403,32 +424,45 @@ def write_sheets(report,output,progress=None):
         # Local view metadata belongs to this rendering copy.
         p=dict(p,label=p.get('label',i));lo,hi,contour,edges=geometry(p)
         holes=classified_holes(p,lo);cuts=milling_for(p,lo);loops=contour_data(p);bands=native_bands(p)
+        for cut in cuts:cut['section_detail']=cross_section(p,cut,loops)
+        for index,cut in enumerate(cut for cut in cuts if cut['section_detail']):cut['section_label']=section_label(index)
         prepared.append((p,lo,hi,contour,edges,holes,cuts,loops,bands))
-    def count(item):return max(1,math.ceil(len(face_holes(item[5],False))/20),math.ceil(len(face_holes(item[5],True))/20),math.ceil(len(item[8])/5))
+    def count(item):return max(1,math.ceil(len(face_holes(item[5],False))/20),math.ceil(len(face_holes(item[5],True))/20),math.ceil(len(item[8])/5),math.ceil(sum(bool(cut.get('section_detail')) for cut in item[6])/SECTIONS_PER_PAGE))
     total=sum(count(item) for item in prepared);page=0
     c=canvas.Canvas(str(output),pagesize=(PAGE_W,PAGE_H));c.setTitle('Export Cote')
     for item in prepared:
         p,lo,hi,contour,edges,holes,cuts,loops,bands=item
         faces=selected_faces(holes,cuts);single=len(faces)==1
+        details=[cut for cut in cuts if cut.get('section_detail')]
         portrait=single and hi[1]-lo[1]>hi[0]-lo[0]
         page_width,page_height=(842,1191) if portrait else (PAGE_W,PAGE_H)
         for part in range(count(item)):
             page+=1
             c.setPageSize((page_width,page_height))
+            c.section_labels_on_page={cut['section_label'] for cut in details[part*SECTIONS_PER_PAGE:(part+1)*SECTIONS_PER_PAGE]}
             if progress:progress('Desen: Cotare față/spate placa '+str(p['label']))
             c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,page_height-38,f"Placa {p['label']:02} | {p.get('designation') or p['id']} | {p.get('name','')}"[:120])
             c.setFont('Body',5);c.drawString(35,page_height-48,f"{board_fmt(hi[0]-lo[0])} × {board_fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
-            views=[(faces[0],220 if portrait else 190)] if single else ([(False,685),(True,200)] if portrait else [(False,516),(True,205)])
+            views=[(faces[0],220 if portrait else 160)] if single else [(False,480 if details else 516),(True,170 if details else 205)]
+            next_table_top=None
             for back,base in views:
-                visible,convert=draw_view(c,*item[:-1],bands,back,base,portrait,single)
+                visible,convert=draw_view(c,*item[:-1],bands,back,base,portrait,single,bool(details))
                 top=base+((820 if portrait else 520) if single else (430 if portrait else 235));table_x=600 if portrait else 865;table_width=page_width-table_x-35
-                c.setFillColor(INK);c.setFont('Body',8);c.drawString(table_x,top+10,'Găuri — '+('Fața 2 / Spate' if back else 'Fața 1 / Față')+' — mm')
+
+                if details:top=min(top,page_height-82-DETAIL_HEIGHT-24)
+                if next_table_top is not None:top=min(top,next_table_top)
                 rows=[];colors=[]
                 for h in visible[part*20:(part+1)*20]:
                     q=convert(h['position']);rows.append([h['tag'],fmt(q[0]),fmt(q[1]),fmt(h['z']),fmt(h['diameter']),fmt(h['depth']),'Străp.' if h['through'] else 'Față' if h['face'].startswith('Z') else 'Cant'])
                     colors.append(h['color'])
-                end=table(c,table_x,top,table_width,['Nr.','X','Y','Z local','Ø','Adâncime','Tip'],rows,[.1,.155,.155,.125,.1,.17,.195],colors)
+                headers=['Nr.','X','Y','Z local','Ø','Adâncime','Tip']
+                table_x,table_width=coordinate_table_position(page_width,headers,rows)
+                c.setFillColor(INK);c.setFont('Body',8);c.drawRightString(page_width-PAGE_FRAME_INSET-TABLE_RIGHT_PADDING,top+10,'Găuri — '+('Fața 2 / Spate' if back else 'Fața 1 / Față')+' — mm')
+                end=table(c,table_x,top,table_width,headers,rows,[.1,.155,.155,.125,.1,.17,.195],colors)
                 draw_axes(c,table_x+4,end-24)
+                next_table_top=end-56
+            page_details=details[part*SECTIONS_PER_PAGE:(part+1)*SECTIONS_PER_PAGE]
+            for cut,(x,top) in zip(page_details,section_detail_positions(page_width,page_height,len(page_details))):draw_detail(c,cut,x,top)
             c.setFillColor(INK);c.setFont('Body',8);c.drawString(35,76,'Canturi')
             band_rows=[[b['tag'],b['name'],b['sign'],fmt(b['thickness'])] for b in bands[part*5:(part+1)*5]]
             table(c,90,85,page_width-125,['Reper','Nume căntuire','Denumire','Grosime'],band_rows,[.05,.56,.29,.1],font=6,row_height=9)
