@@ -37,6 +37,26 @@ const list=ok('list_objects',{recursive:true});assert.equal(list.total,3);
 const first=list.items.find(x=>x.name==='Verticală').object_id;
 const group=list.items.find(x=>x.name==='Corp test').object_id;
 const nested=list.items.find(x=>x.name==='Poliță').object_id;
+// Rotated/translated native frame, preserving local contour offsets and element order.
+env.first.ToGlobal=p=>({x:100-p.y,y:200+p.x,z:300+p.z});
+env.first.Contour={Count:3,Min:{x:18,y:0},Max:{x:430,y:614},Objects:[
+ {IsLine:()=>true,AsLine:()=>({Pos1:{x:18,y:0},Pos2:{x:430,y:0}})},
+ {IsArc:()=>true,AsArc:()=>({Pos1:{x:430,y:0},Pos2:{x:430,y:20},Center:{x:430,y:10},ArcDir:false})},
+ {IsCircle:()=>true,AsCircle:()=>({Center:{x:50,y:50},CirRadius:5})}]};
+const nativePanel=ok('get_object',{object_id:first});
+assert.equal(nativePanel.native_panel_contour.complete,true);
+assert.equal(nativePanel.native_panel_contour.contour.elements[0].start_local_mm.x,18);
+assert.equal(nativePanel.native_panel_contour.contour.elements[1].arc_dir_native,false);
+assert.equal(nativePanel.native_panel_contour.contour.elements[2].radius_mm,5);
+const frame=nativePanel.local_coordinate_system;assert.equal(frame.complete,true);
+assert.equal(frame.axis_x_global.y,1);assert.equal(frame.axis_y_global.x,-1);
+const mm=frame.local_to_global_matrix,ii=frame.global_to_local_matrix;
+for(let i=0;i<4;i++)for(let j=0;j<4;j++)assert(Math.abs(mm[i].reduce((t,v,k)=>t+v*ii[k][j],0)-(i===j?1:0))<1e-9);
+env.first.Contour.Objects[1]={ElType:999};
+assert.equal(ok('get_object',{object_id:first}).native_panel_contour.complete,false);
+delete env.first.ToGlobal;delete env.first.Contour;
+assert.equal(ok('get_object',{object_id:first}).local_coordinate_system.available,false);
+
 // Native band dimensions and contour association must preserve zero/false values.
 env.first.Butts={Count:2,0:{Material:'ABS 2x23',Sign:'edge-code',Thickness:2,Width:23,ClipPanel:false,Allowance:0,ElemIndex:0},1:{Material:'ABS .8',Thickness:0.8,Width:23,ClipPanel:true,ElemIndex:1}};
 env.first.Contour={Min:{x:10,y:20},Max:{x:110,y:220},Objects:[{IsLine:()=>true,AsLine:()=>({Pos1:{x:10,y:20},Pos2:{x:10,y:220}})},{IsLine:()=>false}]};

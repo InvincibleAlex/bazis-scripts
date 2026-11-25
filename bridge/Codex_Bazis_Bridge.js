@@ -204,6 +204,72 @@
         }
         return out;
     }
+    function readLocalFrame(obj) {
+        var out={source:'BAZIS object.ToGlobal',available:typeof prop(obj,'ToGlobal')==='function',complete:false,
+            convention:'global = origin_global_mm + x*axis_x_global + y*axis_y_global + z*axis_z_global; matrix rows, column vectors',units:'mm'};
+        if(!out.available)return out;
+        try{
+            var o=vector(obj.ToGlobal(NewVector(0,0,0))),axes=[];
+            if(!o)throw Error('Invalid native origin');
+            for(var i=0;i<3;i++){
+                var v=[0,0,0];v[i]=1;
+                var q=vector(obj.ToGlobal(NewVector(v[0],v[1],v[2])));
+                if(!q)throw Error('Invalid native basis point');
+                axes.push({x:q.x-o.x,y:q.y-o.y,z:q.z-o.z});
+            }
+            out.origin_global_mm=o;out.axis_x_global=axes[0];out.axis_y_global=axes[1];out.axis_z_global=axes[2];
+            var a=axes[0],b=axes[1],c=axes[2];
+            var det=a.x*(b.y*c.z-b.z*c.y)-b.x*(a.y*c.z-a.z*c.y)+c.x*(a.y*b.z-a.z*b.y);
+            out.determinant=det;
+            out.local_to_global_matrix=[[a.x,b.x,c.x,o.x],[a.y,b.y,c.y,o.y],[a.z,b.z,c.z,o.z],[0,0,0,1]];
+            if(Math.abs(det)<1e-12)throw Error('Singular native coordinate frame');
+            var inv=[[(b.y*c.z-b.z*c.y)/det,(b.z*c.x-b.x*c.z)/det,(b.x*c.y-b.y*c.x)/det],
+                [(c.y*a.z-c.z*a.y)/det,(c.z*a.x-c.x*a.z)/det,(c.x*a.y-c.y*a.x)/det],
+                [(a.y*b.z-a.z*b.y)/det,(a.z*b.x-a.x*b.z)/det,(a.x*b.y-a.y*b.x)/det]];
+            inv.forEach(function(r){r.push(-(r[0]*o.x+r[1]*o.y+r[2]*o.z));});inv.push([0,0,0,1]);
+            out.global_to_local_matrix=inv;out.complete=true;
+        }catch(e){out.error=message(e);}
+        return out;
+    }
+    function readNativeContour(contour,depth,budget) {
+        var size=prop(contour,'Count'),out={available:!!contour,count:null,elements:[],complete:false};
+        function xy(p){var x=prop(p,'x'),y=prop(p,'y');return typeof x==='number'&&isFinite(x)&&typeof y==='number'&&isFinite(y)?{x:x,y:y}:null;}
+        if(typeof size!=='number'||!isFinite(size)||size<0||Math.floor(size)!==size||depth>8)return out;
+        out.count=size;out.complete=true;out.bounds_local_mm={min:xy(prop(contour,'Min')),max:xy(prop(contour,'Max'))};
+        var list=prop(contour,'Objects')||contour;
+        for(var i=0;i<size;i++){
+            if(--budget.remaining<0){out.complete=false;out.truncated=true;break;}
+            var e=prop(list,i),row={index:i,type:'unsupported',raw_type:prop(e,'ElType')};
+            try{
+                if(typeof prop(e,'IsLine')==='function'&&e.IsLine()){
+                    var line=e.AsLine();row.type='line';row.start_local_mm=xy(prop(line,'Pos1'));row.end_local_mm=xy(prop(line,'Pos2'));
+                    if(!row.start_local_mm||!row.end_local_mm)out.complete=false;
+                }else if(typeof prop(e,'IsArc')==='function'&&e.IsArc()){
+                    var arc=e.AsArc();row.type='arc';row.start_local_mm=xy(prop(arc,'Pos1'));row.end_local_mm=xy(prop(arc,'Pos2'));row.center_local_mm=xy(prop(arc,'Center'));
+                    var direction=prop(arc,'ArcDir');if(scalar(direction)&&typeof direction!=='undefined')row.arc_dir_native=direction;
+                    if(!row.start_local_mm||!row.end_local_mm||!row.center_local_mm||typeof direction==='undefined')out.complete=false;
+                }else if(typeof prop(e,'IsCircle')==='function'&&e.IsCircle()){
+                    var circle=e.AsCircle();row.type='circle';row.center_local_mm=xy(prop(circle,'Center'));row.radius_mm=prop(circle,'CirRadius');
+                    if(!row.center_local_mm||typeof row.radius_mm!=='number'||!isFinite(row.radius_mm)||row.radius_mm<=0)out.complete=false;
+                }else if(typeof prop(e,'IsList')==='function'&&e.IsList()){
+                    row.type='list';row.contour=readNativeContour(e.AsList(),depth+1,budget);if(!row.contour.complete)out.complete=false;
+                }else{
+                    row.native_data=nativeData(e,1,[]);out.complete=false;
+                }
+            }catch(error){row.error=message(error);out.complete=false;}
+            out.elements.push(row);
+        }
+        return out;
+    }
+    function readPanelContour(obj) {
+        var out={source:'BAZIS panel.Contour',coordinate_space:'panel local XY, mm',
+            note:'Native element order and indices retained for Butts.ElemIndex. Unsupported curves are explicit; no bounding rectangle substitution.',
+            contour:readNativeContour(prop(obj,'Contour'),0,{remaining:10000}),properties:{}};
+        ['ContourWidth','ContourHeight','Thickness','LowZ','HighZ','MiddleZ','Bent','IsContourRectangle','TextureOrientation','TextureAngle','FrontFace'].forEach(function(k){var v=prop(obj,k);if(scalar(v)&&typeof v!=='undefined')out.properties[k]=v;});
+        out.complete=out.contour.complete;
+        if(out.properties.Bent===true){out.complete=false;out.note+=' Bent panel: flat XY contour alone does not describe the bent surface.';}
+        return out;
+    }
     function snapshot(obj, indexes, details) {
         var out={object_id:register(obj,indexes), parent_id:indexes.length>1?parentHandle(indexes):null,
                  name:prop(obj,'Name'), child_count:count(obj), position_parent_mm:vector(prop(obj,'Position'))};
@@ -218,6 +284,8 @@
             out.native_hardware=readNativeHardware(obj);
             out.native_layers=readNativeLayers(obj);
             out.native_edge_bands=readNativeEdgeBands(obj);
+            out.local_coordinate_system=readLocalFrame(obj);
+            out.native_panel_contour=readPanelContour(obj);
             out.edge_band_count=count(prop(obj,'Butts')); out.cut_count=count(prop(obj,'Cuts'));
             out.plastic_count=count(prop(obj,'Plastics'));
             out.methods={translate_global:typeof prop(obj,'TranslateGCS')==='function',rotate_global:typeof prop(obj,'RotateGCS')==='function',build:typeof prop(obj,'Build')==='function'};
