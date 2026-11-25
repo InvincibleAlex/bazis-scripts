@@ -34,18 +34,22 @@ def selected_faces(holes,cuts):
     return [False]
 
 
-def view_transform(lo,hi,back=False):
+def view_transform(lo,hi,back=False,long_horizontal=False):
     width,height=hi[0]-lo[0],hi[1]-lo[1]
     flip='y' if width>=height else 'x'
+    rotate=long_horizontal and height>width
     def convert(point):
         x,y=point[0]-lo[0],point[1]-lo[1]
         if back:
             if flip=='x':x=width-x
             else:y=height-y
-        return [x,y]
+        return [y,width-x] if rotate else [x,y]
     def direction(d):
-        return [-d[0] if back and flip=='x' else d[0],-d[1] if back and flip=='y' else d[1],-d[2] if back else d[2]]
-    return convert,direction,flip
+        x=-d[0] if back and flip=='x' else d[0]
+        y=-d[1] if back and flip=='y' else d[1]
+        z=-d[2] if back else d[2]
+        return [y,-x,z] if rotate else [x,y,z]
+    return convert,direction,'y' if rotate else flip
 
 
 def classified_holes(panel,lo):
@@ -302,7 +306,8 @@ def draw_band_marker(c,label,center,target):
 
 
 def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False,single=False):
-    width,height=hi[0]-lo[0],hi[1]-lo[1];convert,vector,flip=view_transform(lo,hi,back)
+    width,height=hi[0]-lo[0],hi[1]-lo[1];convert,vector,flip=view_transform(lo,hi,back,long_horizontal=not single)
+    if not single and height>width:width,height=height,width
     area_width,area_height=((440,790) if portrait else (650,490)) if single else ((440,400) if portrait else (650,205))
     scale=min(area_width/width,area_height/height);left=120+(area_width-width*scale)/2;bottom=base+(area_height-height*scale)/2
     top=bottom+height*scale;right=left+width*scale
@@ -404,7 +409,8 @@ def write_sheets(report,output,progress=None):
     c=canvas.Canvas(str(output),pagesize=(PAGE_W,PAGE_H));c.setTitle('Export Cote')
     for item in prepared:
         p,lo,hi,contour,edges,holes,cuts,loops,bands=item
-        portrait=hi[1]-lo[1]>hi[0]-lo[0]
+        faces=selected_faces(holes,cuts);single=len(faces)==1
+        portrait=single and hi[1]-lo[1]>hi[0]-lo[0]
         page_width,page_height=(842,1191) if portrait else (PAGE_W,PAGE_H)
         for part in range(count(item)):
             page+=1
@@ -412,7 +418,6 @@ def write_sheets(report,output,progress=None):
             if progress:progress('Desen: Cotare față/spate placa '+str(p['label']))
             c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,page_height-38,f"Placa {p['label']:02} | {p.get('designation') or p['id']} | {p.get('name','')}"[:120])
             c.setFont('Body',5);c.drawString(35,page_height-48,f"{board_fmt(hi[0]-lo[0])} × {board_fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
-            faces=selected_faces(holes,cuts);single=len(faces)==1
             views=[(faces[0],220 if portrait else 190)] if single else ([(False,685),(True,200)] if portrait else [(False,516),(True,205)])
             for back,base in views:
                 visible,convert=draw_view(c,*item[:-1],bands,back,base,portrait,single)

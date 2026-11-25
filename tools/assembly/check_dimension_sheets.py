@@ -24,6 +24,27 @@ def example():
     return p
 
 class Sheets(unittest.TestCase):
+    def test_long_two_sided_board_rotates_geometry_axes_and_table_coordinates(self):
+        front,direction,flip=view_transform([-60,10],[0,2210],False,long_horizontal=True)
+        back,back_direction,back_flip=view_transform([-60,10],[0,2210],True,long_horizontal=True)
+        self.assertEqual(front([0,10]),[0,0])
+        self.assertEqual(front([-60,2210]),[2200,60])
+        self.assertEqual(front([-15,80]),[70,15])
+        self.assertEqual(back([-15,80]),[70,45])
+        self.assertEqual(direction([-1,0,0]),[0,1,0])
+        self.assertEqual(back_direction([-1,0,0]),[0,-1,0])
+        self.assertEqual((flip,back_flip),('y','y'))
+    def test_long_two_sided_pdf_is_landscape_with_both_views(self):
+        p=example();p['local_bounds']={'min':[0,0],'max':[300,2200]}
+        p['native_contour']=rectangle(0,0,300,2200);p['contour_tree']=None
+        p['width']=300;p['height']=2200
+        with tempfile.TemporaryDirectory() as temp:
+            out=Path(temp)/'horizontal.pdf';write_sheets({'panels':[p]},out)
+            page=PdfReader(out).pages[0];text=page.extract_text()
+            self.assertGreater(float(page.mediabox.width),float(page.mediabox.height))
+            self.assertIn('Face 1',text);self.assertIn('Face 2',text)
+            self.assertIn('întoarcere sus–jos',text)
+
     def test_board_rounding_does_not_round_drilling_values(self):
         from dimension_sheets import board_fmt,fmt
         self.assertEqual(board_fmt(971.9982617),'972')
