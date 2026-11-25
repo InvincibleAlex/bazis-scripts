@@ -4,6 +4,7 @@ from decimal import Decimal,ROUND_HALF_UP
 from reportlab.lib.units import mm
 from dimension_sections import cross_section,section_label,draw_detail,draw_section_mark,DETAIL_WIDTH,DETAIL_HEIGHT,DETAIL_GAP,SECTIONS_PER_PAGE
 from dimension_annotations import AnnotationLayout
+from dimension_page_layout import PADDING,DIMENSION_STEP,DIMENSION_START,grouped_coordinates,nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions
 from pathlib import Path
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -133,10 +134,12 @@ def contour_data(panel):
 def native_bands(panel):
     bands=(panel.get('module_comparison') or {}).get('bands')
     if bands is None:bands=(panel.get('duplicate_signature') or {}).get('bands',[])
-    rows=[]
+    rows=[];types={}
     for b in bands:
-        rows.append({'tag':str(len(rows)+1),'element':b.get('ElemIndex',b.get('element')),
-                     'name':str(b.get('Material',b.get('material',''))),'sign':str(b.get('Sign',b.get('sign',''))),
+        key=(str(b.get('Material',b.get('material',''))).strip(),str(b.get('Sign',b.get('sign',''))).strip(),b.get('Thickness',b.get('thickness')),b.get('Width',b.get('width')))
+        if key not in types:types[key]=str(len(types)+1)
+        rows.append({'tag':types[key],'element':b.get('ElemIndex',b.get('element')),
+                     'name':str(b.get('Material',b.get('material',''))).split('\r')[0],'sign':str(b.get('Sign',b.get('sign',''))),
                      'thickness':b.get('Thickness',b.get('thickness'))})
     return rows
 
@@ -159,9 +162,9 @@ def content_column_widths(headers,rows,font,max_width):
 
 
 def section_detail_positions(page_width,page_height,count):
-    right=page_width-PAGE_FRAME_INSET-TABLE_RIGHT_PADDING
-    start=right-count*DETAIL_WIDTH-max(0,count-1)*DETAIL_GAP
-    return [(start+i*(DETAIL_WIDTH+DETAIL_GAP),page_height-82) for i in range(count)]
+    right=page_width-PAGE_FRAME_INSET-PADDING;columns=min(2,max(1,count))
+    start=right-columns*DETAIL_WIDTH-max(0,columns-1)*PADDING
+    return [(start+(i%columns)*(DETAIL_WIDTH+PADDING),page_height-PADDING-7-(i//columns)*(DETAIL_HEIGHT+PADDING)) for i in range(count)]
 
 
 def coordinate_table_position(page_width,headers,rows,font=6.5,frame_inset=PAGE_FRAME_INSET):
@@ -171,26 +174,40 @@ def coordinate_table_position(page_width,headers,rows,font=6.5,frame_inset=PAGE_
     return right-width,width
 
 
-def table(c,x,top,width,headers,rows,widths,colors=None,font=6.5,row_height=10):
+def cell_lines(value,font,width):
+    lines=[]
+    for paragraph in str(value).replace('\r','\n').split('\n'):
+        for line in simpleSplit(paragraph,'Body',font,max(1,width)+.01) or ['']:
+            part=''
+            for char in line:
+                if part and pdfmetrics.stringWidth(part+char,'Body',font)>width+.01:lines.append(part);part=char
+                else:part+=char
+            lines.append(part)
+    return lines or ['']
+
+
+def table_metrics(headers,rows,font,row_height,width):
+    widths=content_column_widths(headers,rows,font,width)
+    lines=[[cell_lines(value,font,w-8) for value,w in zip(row,widths)] for row in [headers]+rows]
+    heights=[max(row_height,max(len(cell) for cell in row)*(font+2)+1.5) for row in lines]
+    return widths,lines,heights
+
+
+def table(c,x,top,width,headers,rows,widths=None,colors=None,font=6.5,row_height=10):
+    measured,lines,heights=table_metrics(headers,rows,font,row_height,width);width=sum(measured)
     c.saveState();cols=[x]
-    for value in content_column_widths(headers,rows,font,width):cols.append(cols[-1]+value)
-    width=cols[-1]-x
-    c.setFillColor(HexColor('#f4f6f7'));c.rect(x,top-row_height,width,row_height,stroke=0,fill=1)
-    height=row_height*(len(rows)+1)
+    for value in measured:cols.append(cols[-1]+value)
+    c.setFillColor(HexColor('#f4f6f7'));c.rect(x,top-heights[0],width,heights[0],stroke=0,fill=1)
     c.setStrokeColor(HexColor('#6b7780'));c.setLineWidth(.2)
-    for cx in cols:c.line(cx,top,cx,top-height)
-    for i in range(len(rows)+2):c.line(x,top-i*row_height,x+width,top-i*row_height)
-    c.setFillColor(INK);c.setFont('Body',font)
-    for i,text in enumerate(headers):c.drawString(cols[i]+3,top-row_height+3,text)
-    for j,row in enumerate(rows):
-        c.setFillColor(colors[j] if colors else INK)
-        for i,value in enumerate(row):
-            # Fit each cell independently without allowing text to overwrite borders.
-            text=str(value);size=font;available=cols[i+1]-cols[i]-6
-            while pdfmetrics.stringWidth(text,'Body',size)>available and size>4.5:size-=.25
-            c.saveState();path=c.beginPath();path.rect(cols[i]+1,top-(j+2)*row_height+1,cols[i+1]-cols[i]-2,row_height-1);c.clipPath(path,stroke=0)
-            c.setFont('Body',size);c.drawString(cols[i]+3,top-(j+2)*row_height+3,text);c.restoreState()
-    c.restoreState();return top-height
+    total_height=sum(heights)
+    for cx in cols:c.line(cx,top,cx,top-total_height)
+    y=top;c.line(x,y,x+width,y);c.setFont('Body',font)
+    for index,(cells,height) in enumerate(zip(lines,heights)):
+        c.setFillColor(colors[index-1] if index and colors else INK)
+        for i,cell in enumerate(cells):
+            for j,text in enumerate(cell):c.drawString(cols[i]+4,y-font-2-j*(font+2),text)
+        y-=height;c.line(x,y,x+width,y)
+    c.restoreState();return y
 
 
 def draw_axes(c,left,bottom):
@@ -308,32 +325,32 @@ def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
     return visible
 
 
-def baseline_dimensions(c,project,entries,axis,left,bottom):
-    groups=[]
-    for entry in sorted(entries,key=lambda item:item[0]):
-        value,color=entry[:2];source=entry[2] if len(entry)>2 else 'hole'
-        if groups and value-groups[-1][0][0]<=.01:groups[-1].append((value,color,source))
-        else:groups.append([(value,color,source)])
-    # Each complete dimension starts at the same datum and has its own parallel line.
-    available=min(72,max(0,left-50)) if axis==1 else 72
-    gap=min(9,available/max(1,len(groups)-1))
-    origin=project([0,0])
+def baseline_dimensions(c,project,entries,axis,left,bottom,side=None,width=0,height=0):
+    groups=grouped_coordinates(entries);side=side or ('bottom' if axis==0 else 'left')
+    sign=1 if side in ('top','right') else -1
+    datum=[0,height if side=='top' else 0] if axis==0 else [width if side=='right' else 0,0]
+    origin=project(datum)
+    base=project([width,height])[axis^1] if side in ('top','right') else (bottom if axis==0 else left)
     for index,group in enumerate(groups):
         value=sum(v for v,_,_ in group)/len(group);colors=[]
         label=board_fmt(value) if all(source=='contour' for _,_,source in group) else fmt(value)
         for _,color,_ in group:
             if color not in colors:colors.append(color)
-        endpoint=project([value,0] if axis==0 else [0,value])
-        offset=(bottom if axis==0 else left)-27-index*gap
+        point=[value,datum[1]] if axis==0 else [datum[0],value]
+        endpoint=project(point);offset=base+sign*(DIMENSION_START+index*DIMENSION_STEP)
         dimension(c,origin,endpoint,offset,label,axis==1,color=colors[0])
         if len(colors)>1:
-            c.saveState();c.setLineWidth(.3)
+            c.saveState();c.setLineWidth(.25)
             for i,color in enumerate(colors[1:]):
                 c.setStrokeColor(color)
                 if axis==0:
-                    mid=(origin[0]+endpoint[0])/2;c.line(mid-3,offset-2-i*2,mid+3,offset-2-i*2)
+                    mid=origin[0]+(endpoint[0]-origin[0])*.25+i*4
+                    marker_y=offset+sign*3;c.line(mid-1.5,marker_y,mid+1.5,marker_y)
+                    if getattr(c,'annotation_layout',None):c.annotation_layout.reserve((mid-2,marker_y-.5,mid+2,marker_y+.5))
                 else:
-                    mid=(origin[1]+endpoint[1])/2;c.line(offset+2+i*2,mid-3,offset+2+i*2,mid+3)
+                    mid=origin[1]+(endpoint[1]-origin[1])*.25+i*4
+                    marker_x=offset+sign*3;c.line(marker_x,mid-1.5,marker_x,mid+1.5)
+                    if getattr(c,'annotation_layout',None):c.annotation_layout.reserve((marker_x-.5,mid-2,marker_x+.5,mid+2))
             c.restoreState()
 
 
@@ -351,18 +368,16 @@ def draw_band_marker(c,label,center,target):
     c.setFillColor(INK);c.setFont('Body',7);c.drawCentredString(center[0],center[1]-2.4,str(label));c.restoreState()
 
 
-def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False,single=False,has_sections=False):
+def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False,single=False,has_sections=False,placement=None,side_entries=None,envelope=None):
     width,height=hi[0]-lo[0],hi[1]-lo[1];convert,vector,flip=view_transform(lo,hi,back,long_horizontal=not single)
     if not single and height>width:width,height=height,width
-    area_width,area_height=((440,790) if portrait else (650,490)) if single else ((440,400) if portrait else (650,205))
-    if has_sections:area_height-=100 if single else 40
-    scale=min(area_width/width,area_height/height);left=120+(area_width-width*scale)/2;bottom=base+(area_height-height*scale)/2
+    if placement is None:
+        placement={'scale':min(650/width,205/height),'left':120,'bottom':base,'bounds':(20,base-110,850,base+245)}
+    scale,left,bottom=placement['scale'],placement['left'],placement['bottom']
     top=bottom+height*scale;right=left+width*scale
     project=lambda p:(left+p[0]*scale,bottom+p[1]*scale)
     native=lambda p:project(convert(p))
-    c.annotation_layout=AnnotationLayout((20,base-110,(600 if portrait else 865)-15,base+area_height+33))
-    if has_sections:c.annotation_layout.reserve((20,c._pagesize[1]-190,c._pagesize[0]-TABLE_RIGHT_PADDING,c._pagesize[1]-70))
-    c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,base+area_height+(10 if has_sections else 39),'Face 2 / Spate — '+('întoarcere sus–jos' if flip=='y' else 'întoarcere stânga–dreapta') if back else 'Face 1 / Față — Zmax')
+    c.annotation_layout=AnnotationLayout(placement['bounds'])
     if contour:
         c.setStrokeColor(INK);c.setLineWidth(.25)
         for e in flatten(contour):curve(c,e,native)
@@ -372,8 +387,6 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     for loop in loops:
         c.setStrokeColor(THROUGH if loop['interior'] else INK)
         for e in loop['elements']:curve(c,e,native)
-    dimension(c,project([0,0]),project([width,0]),bottom-13,board_fmt(width),color=THROUGH)
-    dimension(c,project([0,0]),project([0,height]),left-13,board_fmt(height),True,color=THROUGH)
     # Contour vertices are located from the view origin, with common coordinates stacked once.
     outer=[xy(e[key]) for loop in loops if not loop['interior'] for e in loop['elements'] for key in ['start','end'] if key in e]
     visible=face_holes(holes,back);positions=[]
@@ -396,13 +409,14 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     for h,q,a in sorted(positions,key=lambda item:(-item[1][1],item[1][0])):
         c.setFont('Body',6);c.setFillColor(h['color'])
         c.annotation_layout.draw(c,a[0]+5,a[1]+5,h['tag'],target=a)
-    # Baseline dimensions: one full dimension line per shared coordinate.
-    for axis in [0,1]:
-        entries=[(q[axis],h['color'],'hole') for h,q,a in positions if .01<q[axis]<(width if axis==0 else height)-.01]
-        entries.extend((convert(q)[axis],THROUGH,'contour') for q in outer if .01<convert(q)[axis]<(width if axis==0 else height)-.01)
-        baseline_dimensions(c,project,entries,axis,left,bottom)
+    side_entries=side_entries or nearest_dimension_sides(visible,outer,convert,width,height,THROUGH)
+    envelope=envelope or dimension_envelope(side_entries,cuts,bands)
+    for side,entries in side_entries.items():
+        baseline_dimensions(c,project,entries,0 if side in ('top','bottom') else 1,left,bottom,side,width,height)
     for i,loop in enumerate([loop for loop in loops if loop['interior']],1):annotate_loop(c,loop,convert,project,width,height,i)
     draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
+    dimension(c,project([0,0]),project([width,0]),bottom-envelope['overall']['bottom'],board_fmt(width),color=THROUGH)
+    dimension(c,project([0,0]),project([0,height]),left-envelope['overall']['left'],board_fmt(height),True,color=THROUGH)
     grain=grain_vector(p)
     if grain:
         d=vector(grain);length=min(45,max(14,min(width,height)*scale*.3));nx,ny=-d[1],d[0]
@@ -449,53 +463,81 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
 
 def write_sheets(report,output,progress=None):
     pdfmetrics.registerFont(TTFont('Body','C:/Windows/Fonts/arial.ttf'))
-    prepared=[]
-    for i,p in enumerate(report.get('panels',[]),1):
-        # Local view metadata belongs to this rendering copy.
-        p=dict(p,label=p.get('label',i));lo,hi,contour,edges=geometry(p)
+    panels=report.get('panels',[]);c=canvas.Canvas(str(output),pagesize=(PAGE_W,PAGE_H));c.setTitle('Export Cote')
+    total_holes=total_cuts=0
+    headers=['Nr.','X','Y','Z local','Ø','Adâncime','Tip']
+    for page,original in enumerate(panels,1):
+        p=dict(original,label=original.get('label',page));lo,hi,contour,edges=geometry(p)
         holes=classified_holes(p,lo);cuts=milling_for(p,lo);loops=contour_data(p);bands=native_bands(p)
+        total_holes+=len(holes);total_cuts+=len(cuts)
         for cut in cuts:cut['section_detail']=cross_section(p,cut,loops)
-        for index,cut in enumerate(cut for cut in cuts if cut['section_detail']):cut['section_label']=section_label(index)
-        prepared.append((p,lo,hi,contour,edges,holes,cuts,loops,bands))
-    def count(item):return max(1,math.ceil(len(face_holes(item[5],False))/20),math.ceil(len(face_holes(item[5],True))/20),math.ceil(len(item[8])/5),math.ceil(sum(bool(cut.get('section_detail')) for cut in item[6])/SECTIONS_PER_PAGE))
-    total=sum(count(item) for item in prepared);page=0
-    c=canvas.Canvas(str(output),pagesize=(PAGE_W,PAGE_H));c.setTitle('Export Cote')
-    for item in prepared:
-        p,lo,hi,contour,edges,holes,cuts,loops,bands=item
+        details=[cut for cut in cuts if cut['section_detail']]
+        for index,cut in enumerate(details):cut['section_label']=section_label(index)
         faces=selected_faces(holes,cuts);single=len(faces)==1
-        details=[cut for cut in cuts if cut.get('section_detail')]
         portrait=single and hi[1]-lo[1]>hi[0]-lo[0]
         page_width,page_height=(842,1191) if portrait else (PAGE_W,PAGE_H)
-        for part in range(count(item)):
-            page+=1
-            c.setPageSize((page_width,page_height))
-            c.section_labels_on_page={cut['section_label'] for cut in details[part*SECTIONS_PER_PAGE:(part+1)*SECTIONS_PER_PAGE]}
-            if progress:progress('Desen: Cotare față/spate placa '+str(p['label']))
-            c.setFillColor(INK);c.setFont('Body',6);c.drawString(35,page_height-38,f"Placa {p['label']:02} | {p.get('designation') or p['id']} | {p.get('name','')}"[:120])
-            c.setFont('Body',5);c.drawString(35,page_height-48,f"{board_fmt(hi[0]-lo[0])} × {board_fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
-            views=[(faces[0],220 if portrait else 160)] if single else [(False,480 if details else 516),(True,170 if details else 205)]
-            next_table_top=None
-            for back,base in views:
-                visible,convert=draw_view(c,*item[:-1],bands,back,base,portrait,single,bool(details))
-                top=base+((820 if portrait else 520) if single else (430 if portrait else 235));table_x=600 if portrait else 865;table_width=page_width-table_x-35
-
-                if details:top=min(top,page_height-82-DETAIL_HEIGHT-24)
-                if next_table_top is not None:top=min(top,next_table_top)
-                rows=[];colors=[]
-                for h in visible[part*20:(part+1)*20]:
-                    q=convert(h['position']);rows.append([h['tag'],fmt(q[0]),fmt(q[1]),fmt(h['z']),fmt(h['diameter']),fmt(h['depth']),'Străp.' if h['through'] else 'Față' if h['face'].startswith('Z') else 'Cant'])
-                    colors.append(h['color'])
-                headers=['Nr.','X','Y','Z local','Ø','Adâncime','Tip']
-                table_x,table_width=coordinate_table_position(page_width,headers,rows)
-                c.setFillColor(INK);c.setFont('Body',8);c.drawRightString(page_width-PAGE_FRAME_INSET-TABLE_RIGHT_PADDING,top+10,'Găuri — '+('Fața 2 / Spate' if back else 'Fața 1 / Față')+' — mm')
-                end=table(c,table_x,top,table_width,headers,rows,[.1,.155,.155,.125,.1,.17,.195],colors)
-                draw_axes(c,table_x+4,end-24)
-                next_table_top=end-56
-            page_details=details[part*SECTIONS_PER_PAGE:(part+1)*SECTIONS_PER_PAGE]
-            for cut,(x,top) in zip(page_details,section_detail_positions(page_width,page_height,len(page_details))):draw_detail(c,cut,x,top)
-            c.setFillColor(INK);c.setFont('Body',8);c.drawString(35,76,'Canturi')
-            band_rows=[[b['tag'],b['name'],b['sign'],fmt(b['thickness'])] for b in bands[part*5:(part+1)*5]]
-            table(c,90,85,page_width-125,['Reper','Nume căntuire','Denumire','Grosime'],band_rows,[.05,.56,.29,.1],font=6,row_height=9)
-            c.drawRightString(page_width-35,24,f'{page} / {total}');c.showPage()
+        unique_bands={band['tag']:band for band in bands}
+        band_headers=['Reper','Nume căntuire','Denumire','Grosime']
+        band_rows=[[b['tag'],b['name'],b['sign'],fmt(b['thickness'])] for b in unique_bands.values()]
+        views=[]
+        outer=[xy(e[key]) for loop in loops if not loop['interior'] for e in loop['elements'] for key in ['start','end'] if key in e]
+        for back in faces:
+            convert,_,_=view_transform(lo,hi,back,long_horizontal=not single)
+            width,height=hi[0]-lo[0],hi[1]-lo[1]
+            if not single and height>width:width,height=height,width
+            visible=face_holes(holes,back)
+            side_entries=nearest_dimension_sides(visible,outer,convert,width,height,THROUGH)
+            visible_cuts=[cut for cut in cuts if cut.get('face')==('Zmin' if back else 'Zmax') or cut.get('face') not in ('Zmin','Zmax')]
+            envelope=dimension_envelope(side_entries,visible_cuts,bands)
+            rows=[];colors=[]
+            for hole in visible:
+                q=convert(hole['position']);rows.append([hole['tag'],fmt(q[0]),fmt(q[1]),fmt(hole['z']),fmt(hole['diameter']),fmt(hole['depth']),'Străp.' if hole['through'] else 'Față' if hole['face'].startswith('Z') else 'Cant'])
+                colors.append(hole['color'])
+            views.append({'back':back,'width':width,'height':height,'sides':side_entries,'envelope':envelope,'rows':rows,'colors':colors,
+                          'title':'Găuri — '+('Fața 2 / Spate' if back else 'Fața 1 / Față')+' — mm'})
+        # Fit whole tables at their original font size; only the sheet/column flow can grow.
+        for attempt in range(30):
+            detail_positions=section_detail_positions(page_width,page_height,len(details))
+            tables_top=min((top-DETAIL_HEIGHT-PADDING for _,top in detail_positions),default=page_height-PADDING)
+            if tables_top<PADDING+180:page_height+=200;continue
+            measure=lambda rows,title:max(sum(content_column_widths(headers,rows,6.5,1e9)),pdfmetrics.stringWidth(title,'Body',8))
+            columns=flow_coordinate_tables([view for view in views if view['rows']],tables_top,PADDING,measure)
+            coordinate_width=sum(column['width'] for column in columns)+PADDING*max(0,len(columns)-1)
+            detail_width=min(2,len(details))*DETAIL_WIDTH+PADDING*max(0,min(2,len(details))-1)
+            sidebar_width=max(coordinate_width,detail_width)
+            sidebar_left=page_width-PADDING-sidebar_width
+            drawing_right=sidebar_left-PADDING if sidebar_width else page_width-PADDING
+            minimum_width=max(view['envelope']['margins']['left']+view['envelope']['margins']['right']+65 for view in views)
+            if drawing_right-PADDING<minimum_width:page_width+=100;continue
+            band_metrics=table_metrics(band_headers,band_rows,6,9,max(100,drawing_right-PADDING)) if band_rows else None
+            band_top=PADDING+(sum(band_metrics[2]) if band_metrics else 0)
+            drawing_bottom=band_top+18+PADDING if band_rows else PADDING
+            region=(PADDING,drawing_bottom,drawing_right,page_height-PADDING-20-PADDING)
+            minimum_height=sum(view['envelope']['margins']['top']+view['envelope']['margins']['bottom']+60 for view in views)+PADDING*(len(views)-1)
+            if region[3]-region[1]<minimum_height:page_height+=100;continue
+            placements=fit_view_regions(region,views);break
+        else:raise ValueError('Nu se poate așeza integral foaia de cote fără micșorarea textului')
+        c.setPageSize((page_width,page_height));c.section_labels_on_page={cut['section_label'] for cut in details}
+        if progress:progress('Desen: Cotare placa '+str(p['label']))
+        c.setFillColor(INK);c.setFont('Body',6);c.drawString(PADDING,page_height-PADDING-6,f"Placa {p['label']:02} | {p.get('designation') or p['id']} | {p.get('name','')}"[:120])
+        c.setFont('Body',5);c.drawString(PADDING,page_height-PADDING-16,f"{board_fmt(hi[0]-lo[0])} × {board_fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
+        item=(p,lo,hi,contour,edges,holes,cuts,loops,bands)
+        for view,placement in zip(views,placements):
+            draw_view(c,*item,view['back'],0,portrait,single,bool(details),placement,view['sides'],view['envelope'])
+        right=page_width-PADDING
+        x=right-coordinate_width
+        for column in columns:
+            column_right=x+column['width']
+            for block in column['chunks']:
+                grid_width=sum(content_column_widths(headers,block['rows'],6.5,1e9));grid_x=column_right-grid_width
+                c.setFillColor(INK);c.setFont('Body',8);c.drawRightString(column_right,block['top']-8,block['title'])
+                end=table(c,grid_x,block['top']-20,grid_width,headers,block['rows'],colors=block['colors'])
+                draw_axes(c,grid_x-2,end-2)
+            x=column_right+PADDING
+        for cut,(x,top) in zip(details,detail_positions):draw_detail(c,cut,x,top)
+        if band_rows:
+            c.setFillColor(INK);c.setFont('Body',8);c.drawString(PADDING,band_top+8,'Canturi')
+            table(c,PADDING,band_top,max(100,drawing_right-PADDING),band_headers,band_rows,font=6,row_height=9)
+        c.setFillColor(INK);c.setFont('Body',7);c.drawRightString(page_width-PADDING,14,f'{page} / {len(panels)}');c.showPage()
     c.save()
-    return {'pages':page,'holes':sum(len(item[5]) for item in prepared),'panels':len(prepared),'cuts':sum(len(item[6]) for item in prepared)}
+    return {'pages':len(panels),'holes':total_holes,'panels':len(panels),'cuts':total_cuts}

@@ -16,8 +16,8 @@ class Sections(unittest.TestCase):
         from dimension_sections import DETAIL_WIDTH
         for count in [1,2,3]:
             positions=section_detail_positions(1191,842,count)
-            self.assertAlmostEqual(positions[-1][0]+DETAIL_WIDTH,1191-10*mm)
-            self.assertTrue(all(top==760 for _,top in positions))
+            self.assertAlmostEqual(max(x+DETAIL_WIDTH for x,_ in positions),1191-10*mm)
+            self.assertAlmostEqual(positions[0][1]+7,842-10*mm)
 
     def test_native_section_width_depth_thickness_and_side(self):
         p=plate();cut=milling_for(p,[0,0])[0];section=cross_section(p,cut,contour_data(p))

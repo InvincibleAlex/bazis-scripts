@@ -58,8 +58,8 @@ class Sheets(unittest.TestCase):
             out=Path(temp)/'horizontal.pdf';write_sheets({'panels':[p]},out)
             page=PdfReader(out).pages[0];text=page.extract_text()
             self.assertGreater(float(page.mediabox.width),float(page.mediabox.height))
-            self.assertIn('Face 1',text);self.assertIn('Face 2',text)
-            self.assertIn('întoarcere sus–jos',text)
+            self.assertIn('Fața 1',text);self.assertIn('Fața 2',text)
+            self.assertNotIn('întoarcere sus–jos',text)
 
     def test_board_rounding_does_not_round_drilling_values(self):
         from dimension_sheets import board_fmt,fmt
@@ -75,7 +75,7 @@ class Sheets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';write_sheets({'panels':[p]},out)
             text=PdfReader(out).pages[0].extract_text()
-            self.assertIn('Face 1',text);self.assertNotIn('Face 2',text)
+            self.assertIn('Fața 1',text);self.assertNotIn('Fața 2',text)
         p['holes'][0]['position_global_mm'][2]=0;p['holes'][0]['direction_global']=[0,0,1]
         self.assertEqual(selected_faces(classified_holes(p,[0,0]),[]),[True])
     def test_crowded_labels_are_all_kept_and_text_never_overlaps(self):
@@ -150,7 +150,7 @@ class Sheets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';receipt=write_sheets({'panels':[p]},out)
             reader=PdfReader(out);text=reader.pages[0].extract_text()
-            self.assertEqual(receipt['pages'],1);self.assertIn('Face 1',text);self.assertIn('Face 2',text);self.assertIn('D1',text);self.assertIn('D2',text)
+            self.assertEqual(receipt['pages'],1);self.assertIn('Fața 1',text);self.assertIn('Fața 2',text);self.assertIn('D1',text);self.assertIn('D2',text)
             self.assertIn('2X23_Negru_0190_PE',text);self.assertNotIn('nu este program',text)
             self.assertEqual(float(reader.pages[0].mediabox.width),1191)
         self.assertEqual(p,before)
@@ -158,7 +158,7 @@ class Sheets(unittest.TestCase):
         p=example();p['holes']=p['holes']*8
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';receipt=write_sheets({'panels':[p]},out)
-            self.assertEqual(receipt['pages'],2)
-            for page in PdfReader(out).pages:self.assertIn('Face 2',page.extract_text())
+            self.assertEqual(receipt['pages'],1)
+            for page in PdfReader(out).pages:self.assertIn('Fața 2',page.extract_text())
 
 if __name__=='__main__':unittest.main()
