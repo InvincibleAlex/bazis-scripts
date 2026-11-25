@@ -562,7 +562,7 @@
         var t=locate(p.object_id),obj=t.obj;
         requireFunction(prop(obj,'CloneTemp'),'object.CloneTemp');
         var beforeRows=scan(requireModel(),[],true),beforeIds=beforeRows.map(function(r){return identity(r.obj);});
-        var out={source:'BAZIS detached CloneTemp / Build / FullBuild',stages:[],triangles:[],complete:false,live_model_unchanged:false};
+        var out={source:'BAZIS detached CloneTemp / FillElements / Build / FullBuild',stages:[],triangles:[],complete:false,live_model_unchanged:false};
         var before={uid:identity(obj),tri_lists_count:prop(obj,'TriListsCount'),edges_count:prop(obj,'EdgesCount'),position:vector(prop(obj,'Position'))};
         var clone=null;
         function summary(stage){
@@ -582,10 +582,10 @@
             var rows=scan(requireModel(),[],true);
             if(prop(clone,'Owner')||rows.some(function(r){return r.obj===clone;}))throw Error('Clone not detached: rebuild refused');
             out.clone_frame=readLocalFrame(clone);out.stages.push(summary('cloned'));
-            ['Build','FullBuild'].forEach(function(method){
+            ['FillElements','Build','FullBuild'].forEach(function(method){
                 if(out.stages[out.stages.length-1].triangle_count>0)return;
                 if(typeof prop(clone,method)!=='function')return;
-                try{clone[method]();out.stages.push(summary(method));}catch(e){out.stages.push({stage:method,error:message(e),triangle_count:0});}
+                try{var returned=clone[method]();var stage=summary(method);if(returned!==null&&typeof returned!=='undefined')stage.returned_metadata=inspectSurfaceAPI(returned);out.stages.push(stage);}catch(e){out.stages.push({stage:method,error:message(e),triangle_count:0});}
             });
             out.available=out.stages.some(function(r){return r.triangle_count>0;});
             out.note='Probe reports native triangle counts only; solid topology and coordinate system still require validation.';

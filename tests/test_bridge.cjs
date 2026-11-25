@@ -103,7 +103,11 @@ const solidProbe=ok('probe_solid_copy',{object_id:first,model_token:token});
 assert.equal(cloneBuilds,1);assert.equal(solidProbe.available,true);assert.equal(solidProbe.live_model_unchanged,true);
 env.first.CloneTemp=()=>env.first;
 assert(ok('probe_solid_copy',{object_id:first,model_token:token}).error);
-assert.equal(cloneBuilds,1);delete env.first.CloneTemp;
+assert.equal(cloneBuilds,1);
+env.first.CloneTemp=()=>({TriListsCount:0,FillElements(){this.TriListsCount=1;this.TriLists=[{Count:24}];},Build(){throw Error('No rebuild needed after native FillElements');}});
+const filledProbe=ok('probe_solid_copy',{object_id:first,model_token:token});
+assert.equal(filledProbe.available,true);assert.equal(filledProbe.stages[1].stage,'FillElements');assert.equal(filledProbe.stages[1].triangle_count,24);
+delete env.first.CloneTemp;
 
 // Native band dimensions and contour association must preserve zero/false values.
 env.first.Butts={Count:2,0:{Material:'ABS 2x23',Sign:'edge-code',Thickness:2,Width:23,ClipPanel:false,Allowance:0,ElemIndex:0},1:{Material:'ABS .8',Thickness:0.8,Width:23,ClipPanel:true,ElemIndex:1}};
