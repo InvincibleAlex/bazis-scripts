@@ -556,6 +556,45 @@
             relation_scope:'Native drilled-hole Fastener/Body references, only among requested panels. Accessories without calculated holes are not covered; no proximity inference.',
             coordinate_note:'Calculated holes associated by BAZIS. Validate raw versus body-local coordinates before rendering.'};
     };
+    // Explicit diagnostic on a detached temporary clone only, never the live object.
+    handlers.probe_solid_copy=function(p){
+        requireModel();if(p.model_token!==modelToken())fail('MODEL_CHANGED','Read get_model again');
+        var t=locate(p.object_id),obj=t.obj;
+        requireFunction(prop(obj,'CloneTemp'),'object.CloneTemp');
+        var beforeRows=scan(requireModel(),[],true),beforeIds=beforeRows.map(function(r){return identity(r.obj);});
+        var out={source:'BAZIS detached CloneTemp / Build / FullBuild',stages:[],triangles:[],complete:false,live_model_unchanged:false};
+        var before={uid:identity(obj),tri_lists_count:prop(obj,'TriListsCount'),edges_count:prop(obj,'EdgesCount'),position:vector(prop(obj,'Position'))};
+        var clone=null;
+        function summary(stage){
+            var mesh=clone;
+            if(typeof prop(clone,'IsMesh')==='function'&&clone.IsMesh()&&typeof prop(clone,'AsMesh')==='function')mesh=clone.AsMesh();
+            var n=prop(mesh,'TriListsCount'),r={stage:stage,tri_lists_count:typeof n==='number'?n:null,triangle_count:0};
+            if(typeof n==='number'&&n>=0&&n<=10000){
+                for(var i=0;i<n;i++){
+                    var list=prop(prop(mesh,'TriLists'),i),count=prop(list,'Count');
+                    if(typeof count==='number'&&isFinite(count)&&count>=0)r.triangle_count+=count;
+                }
+            }
+            return r;
+        }
+        try{
+            clone=obj.CloneTemp();if(!clone||clone===obj)throw Error('No distinct temporary clone returned');
+            var rows=scan(requireModel(),[],true);
+            if(prop(clone,'Owner')||rows.some(function(r){return r.obj===clone;}))throw Error('Clone not detached: rebuild refused');
+            out.clone_frame=readLocalFrame(clone);out.stages.push(summary('cloned'));
+            ['Build','FullBuild'].forEach(function(method){
+                if(out.stages[out.stages.length-1].triangle_count>0)return;
+                if(typeof prop(clone,method)!=='function')return;
+                try{clone[method]();out.stages.push(summary(method));}catch(e){out.stages.push({stage:method,error:message(e),triangle_count:0});}
+            });
+            out.available=out.stages.some(function(r){return r.triangle_count>0;});
+            out.note='Probe reports native triangle counts only; solid topology and coordinate system still require validation.';
+        }catch(e){out.error=message(e);}
+        var afterIds=scan(requireModel(),[],true).map(function(r){return identity(r.obj);});
+        var after={uid:identity(obj),tri_lists_count:prop(obj,'TriListsCount'),edges_count:prop(obj,'EdgesCount'),position:vector(prop(obj,'Position'))};
+        out.live_model_unchanged=JSON.stringify(beforeIds)===JSON.stringify(afterIds)&&JSON.stringify(before)===JSON.stringify(after);
+        return out;
+    };
     // Read existing native tessellation only. Never Build/Triangulate the model.
     handlers.read_geometry=function(p){
         requireModel();

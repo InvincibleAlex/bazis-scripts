@@ -97,6 +97,14 @@ env.first.Contours.Children[0]=env.first.Contours;
 assert.equal(ok('get_object',{object_id:first}).native_panel_contour.all_contours.tree.complete,false);
 delete env.first.Contours;
 
+// Solid rebuild probe acts only on a detached clone, never the model object.
+let cloneBuilds=0;env.first.CloneTemp=()=>({TriListsCount:0,Build(){cloneBuilds++;this.TriListsCount=1;this.TriLists=[{Count:12}];}});
+const solidProbe=ok('probe_solid_copy',{object_id:first,model_token:token});
+assert.equal(cloneBuilds,1);assert.equal(solidProbe.available,true);assert.equal(solidProbe.live_model_unchanged,true);
+env.first.CloneTemp=()=>env.first;
+assert(ok('probe_solid_copy',{object_id:first,model_token:token}).error);
+assert.equal(cloneBuilds,1);delete env.first.CloneTemp;
+
 // Native band dimensions and contour association must preserve zero/false values.
 env.first.Butts={Count:2,0:{Material:'ABS 2x23',Sign:'edge-code',Thickness:2,Width:23,ClipPanel:false,Allowance:0,ElemIndex:0},1:{Material:'ABS .8',Thickness:0.8,Width:23,ClipPanel:true,ElemIndex:1}};
 env.first.Contour={Min:{x:10,y:20},Max:{x:110,y:220},Objects:[{IsLine:()=>true,AsLine:()=>({Pos1:{x:10,y:20},Pos2:{x:10,y:220}})},{IsLine:()=>false}]};
