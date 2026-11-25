@@ -99,7 +99,7 @@ async function writeWorkbook(rows,materials,bands,outputPath,drawing){
  await fs.writeFile(path.join(work,'result.png'),new Uint8Array(await preview.arrayBuffer()));
  const tmp=path.join(work,'authored-'+process.pid+'.xlsx'),manifest=path.join(work,'manifest-'+process.pid+'.json');
  await (await SpreadsheetFile.exportXlsx(wb)).save(tmp);
- await fs.writeFile(manifest,JSON.stringify({touched,rows,materials,bands}));
+ await fs.writeFile(manifest,JSON.stringify({touched,rows,materials,bands,size_piece_inputs:{sheet:'Formular',first_row:2,columns:'ABCDEFGHIJK',material:'B',notes:'K'}}));
  const repair=spawnSync(python,[path.join(path.dirname(fileURLToPath(import.meta.url)),'preserve_template.py'),template,tmp,manifest,outputPath],{encoding:'utf8',windowsHide:true});
  if(repair.status!==0)throw Error(repair.stderr||repair.stdout||'Pastrarea sablonului a esuat');
  await fs.unlink(tmp);await fs.unlink(manifest);

@@ -25,6 +25,7 @@ with zipfile.ZipFile(template) as original,zipfile.ZipFile(authored) as source:
     if 'xl/sharedStrings.xml' in source.namelist():
         strings=[''.join(x.itertext()) for x in ET.fromstring(source.read('xl/sharedStrings.xml'))]
     changes={}
+    styles=original.read('xl/styles.xml').decode('utf-8')
     for sheet,addresses in data['touched'].items():
         filename=mapping[sheet]
         text=original.read(filename).decode('utf-8')
@@ -52,8 +53,15 @@ with zipfile.ZipFile(template) as original,zipfile.ZipFile(authored) as source:
                     if col(other[1])>col(address):at=other.start();break
                 body=body[:at]+replacement+body[at:]
                 text=text[:row.start(2)]+body+text[row.end(2):]
+        sizing=data.get('size_piece_inputs',{})
+        if sizing.get('sheet')==sheet and data.get('rows'):
+            sys.path.insert(0,str(Path(__file__).resolve().parent))
+            from size_piece_inputs import size_inputs
+            first=sizing['first_row'];columns=list(sizing['columns'])
+            text,styles=size_inputs(text,styles,first,first+len(data['rows'])-1,columns,sizing['material'],sizing['notes'])
         ET.fromstring(text)
         changes[filename]=text.encode('utf-8')
+    if styles!=original.read('xl/styles.xml').decode('utf-8'):changes['xl/styles.xml']=styles.encode('utf-8')
     # Native Excel recalculates its original formulas and interactive dropdown helpers.
     workbook=original.read('xl/workbook.xml').decode('utf-8')
     workbook=re.sub(r'<calcPr\b[^>]*/>', '<calcPr calcId="191029" calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/>',workbook)
