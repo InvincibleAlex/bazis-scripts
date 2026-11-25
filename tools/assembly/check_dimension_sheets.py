@@ -24,6 +24,22 @@ def example():
     return p
 
 class Sheets(unittest.TestCase):
+    def test_irregular_polygon_has_one_true_length_dimension_per_side(self):
+        from unittest.mock import patch
+        from io import BytesIO
+        from reportlab.pdfgen.canvas import Canvas
+        from dimension_annotations import AnnotationLayout
+        from dimension_sheets import polygon_side_dimensions,fmt
+        points=[[100,100],[130,100],[150,130],[130,160],[100,160],[80,130],[100,100]]
+        loop={'points':points,'elements':[line(a,b) for a,b in zip(points,points[1:])]}
+        c=Canvas(BytesIO());c.annotation_layout=AnnotationLayout((0,0,500,500))
+        with patch('dimension_sheets.aligned_dimension') as draw:
+            polygon_side_dimensions(c,loop,lambda p:p,lambda p:p)
+            self.assertEqual(draw.call_count,6)
+            import math
+            for call,(a,b) in zip(draw.call_args_list,zip(points,points[1:])):
+                self.assertEqual(call.args[4],fmt(math.dist(a,b)))
+
     def test_long_two_sided_board_rotates_geometry_axes_and_table_coordinates(self):
         front,direction,flip=view_transform([-60,10],[0,2210],False,long_horizontal=True)
         back,back_direction,back_flip=view_transform([-60,10],[0,2210],True,long_horizontal=True)

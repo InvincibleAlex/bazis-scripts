@@ -202,6 +202,31 @@ def draw_axes(c,left,bottom):
     c.drawString(left+14,bottom-1.5,'X');c.drawString(left-1.5,bottom+14,'Y');c.restoreState()
 
 
+def polygon_side_dimensions(c,loop,convert,project):
+    polygon=[project(convert(p)) for p in loop['points']]
+    for element in loop['elements']:
+        if element.get('type')!='line':continue
+        na,nb=xy(element['start']),xy(element['end']);a=project(convert(na));b=project(convert(nb))
+        length=math.dist(a,b)
+        if length<.0001:continue
+        dx,dy=b[0]-a[0],b[1]-a[1];normal=[-dy/length,dx/length];mid=[(a[i]+b[i])/2 for i in range(2)]
+        sign=1 if contains(polygon,[mid[i]+normal[i]*.5 for i in range(2)]) else -1
+        label=fmt(math.dist(na,nb));offset=-sign*14
+        angle=math.degrees(math.atan2(dy,dx))
+        if angle>90:angle-=180
+        if angle<-90:angle+=180
+        # Try several inset distances before moving a side's dimension outside.
+        if length>=pdfmetrics.stringWidth(label,'Body',7)+10:
+            for inset in [12,18,24,30,36,42]:
+                candidate=sign*inset
+                c.saveState();c.setFont('Body',7);c.translate(mid[0]+normal[0]*candidate,mid[1]+normal[1]*candidate);c.rotate(angle)
+                box=c.annotation_layout.text_box(c,0,3,label,centered=True);c.restoreState()
+                corners=[(box[0],box[1]),(box[2],box[1]),(box[2],box[3]),(box[0],box[3])]
+                if c.annotation_layout.fits(box) and all(contains(polygon,q) for q in corners):offset=candidate;break
+        aligned_dimension(c,a,b,offset,label,THROUGH)
+
+
+
 def annotate_loop(c,loop,convert,project,width,height,index):
     pts=[convert(p) for p in loop['points']];mn=[min(p[i] for p in pts) for i in range(2)];mx=[max(p[i] for p in pts) for i in range(2)]
     center=[(mn[i]+mx[i])/2 for i in range(2)];cx,cy=project(center)
@@ -215,6 +240,8 @@ def annotate_loop(c,loop,convert,project,width,height,index):
         radius=loop['elements'][0]['radius'];label='Ø '+fmt(radius*2)
         inside=span_x>=pdfmetrics.stringWidth(label,'Body',7)+12 and span_y>=20
         dimension(c,project([mn[0],center[1]]),project([mx[0],center[1]]),cy if inside else end[1]+14,label,color=THROUGH)
+    elif len(loop['elements'])>4 or any(e.get('type')=='line' and abs(xy(e['start'])[0]-xy(e['end'])[0])>.000001 and abs(xy(e['start'])[1]-xy(e['end'])[1])>.000001 for e in loop['elements']):
+        polygon_side_dimensions(c,loop,convert,project)
     else:
         dimension(c,project([mn[0],center[1]]),project([mx[0],center[1]]),cy-span_y*.25 if fits else end[1]+14,label_x,color=THROUGH)
         dimension(c,project([center[0],mn[1]]),project([center[0],mx[1]]),cx+span_x*.25 if fits else end[0]+16,label_y,True,color=THROUGH)
