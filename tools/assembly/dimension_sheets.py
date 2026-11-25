@@ -466,7 +466,6 @@ def write_sheets(report,output,progress=None):
             c.setFillColor(INK);c.setFont('Body',8);c.drawString(35,76,'Canturi')
             band_rows=[[b['tag'],b['name'],b['sign'],fmt(b['thickness'])] for b in bands[part*5:(part+1)*5]]
             table(c,90,85,page_width-125,['Reper','Nume căntuire','Denumire','Grosime'],band_rows,[.05,.56,.29,.1],font=6,row_height=9)
-            c.setFont('Body',6.5);c.setFillColor(INK);c.drawString(35,13,'Origine X/Y în stânga jos a fiecărei vederi. Albastru: față · Roșu: străpuns / contur · Fuchsia: cant · Maro: frezare')
             c.drawRightString(page_width-35,24,f'{page} / {total}');c.showPage()
     c.save()
     return {'pages':page,'holes':sum(len(item[5]) for item in prepared),'panels':len(prepared),'cuts':sum(len(item[6]) for item in prepared)}
