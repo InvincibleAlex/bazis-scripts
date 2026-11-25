@@ -2,8 +2,23 @@
 // Contur local + cote Cubis: minus grosimea BAZIS a cantului pe fiecare latura cantuita, pentru dreptunghiuri.
 (function () {
     'use strict';
+    var exportLog=null,exportState=null;
+    function exportStatus(message){if(exportLog)fs.appendFileSync(exportLog,new Date().toLocaleTimeString()+' | '+message+'\n','utf8');}
     try {
         var fs = require('fs'), path = require('path'), os = require('os');
+        var commonRoot=path.join('\\\\RG\\Bazis\\Scripts','Export Tabele');
+        if(typeof __dirname==='string'&&fs.existsSync(path.join(__dirname,'Export Tabele','runtime.json')))
+            commonRoot=path.join(__dirname,'Export Tabele');
+        var consoleScript=path.join(commonRoot,'progress_console.ps1');
+        if(!fs.existsSync(consoleScript))throw Error('Lipseste consola comuna: '+consoleScript);
+        exportLog=path.join(os.tmpdir(),'bazis-tabele-'+process.pid+'-'+Date.now()+'.log');exportState=exportLog+'.state';
+        fs.writeFileSync(exportLog,'Pornire export tabele...\n','utf8');
+        function psText(value){return "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+Buffer.from(value,'utf8').toString('base64')+"'))";}
+        var terminal="& ("+psText(consoleScript)+") -LogPath ("+psText(exportLog)+") -StatePath ("+psText(exportState)+")";
+        var encoded=Buffer.from(terminal,'utf16le').toString('base64');
+        var launcher="$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell.exe' -WindowStyle Normal -ArgumentList @('-NoProfile','-NoExit','-ExecutionPolicy','Bypass','-EncodedCommand','"+encoded+"'); $ack="+psText(exportState+'.opened')+"; $until=[DateTime]::UtcNow.AddSeconds(12); while(!(Test-Path -LiteralPath $ack) -and [DateTime]::UtcNow -lt $until){Start-Sleep -Milliseconds 100}; if(!(Test-Path -LiteralPath $ack)){throw 'Terminalul de progres nu a pornit.'}";
+        require('child_process').execFileSync('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(launcher,'utf16le').toString('base64')],{stdio:'ignore',windowsHide:true,timeout:15000});
+        exportStatus('Citire placi si dubluri din modelul BAZIS...');
         if (typeof Model === 'undefined' || !Model) throw new Error('Model nu este disponibil in acest context/eveniment.');
         function get(o, k) { try { return o[k]; } catch (_) { return undefined; } }
         function num(v) { return typeof v === 'number' && isFinite(v) && v > 0; }
@@ -153,6 +168,7 @@
             if (!o || (typeof o !== 'object' && typeof o !== 'function') || seen.has(o)) continue;
             seen.add(o);
             if (++visited > 100000) throw new Error('Limita de 100000 obiecte depasita; exportul a fost oprit.');
+            if(visited%100===0&&typeof exportStatus==='function')exportStatus('Citite '+visited+' obiecte; '+rows.length+' placi si dubluri');
             var w = get(o, 'ContourWidth'), h = get(o, 'ContourHeight'), t = get(o, 'Thickness');
             var name = str(get(o, 'Name'));
             if (num(w) && num(h) && num(t) && /\bpal\b/i.test(str(get(o, 'MaterialName')).split('\r')[0])) {
@@ -197,6 +213,7 @@
             }
         }
         // Query all panel materials through one verified read-only Firebird connection.
+        exportStatus('Citire model terminata: '+rows.length+' placi si dubluri. Verific materialele in baza de date...');
         try {
             var commonRoot=path.join('\\\\RG\\Bazis\\Scripts','Export Tabele');
             if(typeof __dirname==='string'&&fs.existsSync(path.join(__dirname,'Export Tabele','runtime.json')))
@@ -212,12 +229,15 @@
             if(!dbResult.ok)throw Error(dbResult.error||'Citirea bazei a esuat');
             if(!Array.isArray(dbResult.materials) || dbResult.materials.length!==rows.length)throw Error('Raspuns Firebird invalid');
             rows.forEach(function(r,i){r.material_db=dbResult.materials[i];});
+            exportStatus('Citire baza de date reusita.');
         } catch(dbError) {
             var dbFailure=String(dbError.message||dbError);
             try{if(dbError.stdout)dbFailure=JSON.parse(String(dbError.stdout)).error||dbFailure;}catch(ignore){}
             rows.forEach(function(r){r.material_db={desemnare:null,sursa:'Firebird direct',
                 stare:dbFailure.slice(0,500)};});
+            exportStatus('PROBLEMA baza de date: '+dbFailure.slice(0,500));
         }
+        exportStatus('Identific folderul si numele fisierelor de export...');
         var folder = null, folderSource = '', folderError = null, drawingName = null;
         var modelFile = typeof ModelFilename === 'string' ? ModelFilename : '';
         function recentDrawing(dir, maxAge) {
@@ -289,6 +309,7 @@
             numar_placi:rows.length,numar_placi_baza:rows.filter(function(r){return r.tip!=='dublura';}).length,
             numar_dubluri:rows.filter(function(r){return r.tip==='dublura';}).length, placi:rows};
         fs.writeFileSync(base + '.json', JSON.stringify(report, null, 2), {encoding:'utf8', flag:'wx'});
+        exportStatus('Raport JSON salvat: '+base+'.json');
         var sides = ['Y_max','Y_min','X_min','X_max'];
         function edgeText(edges) {
             return edges.map(function (e) {
@@ -315,8 +336,10 @@
                 r.material_db.desemnare,r.material_db.stare,r.material_db.sursa]).map(cell).join(';'));
         });
         fs.writeFileSync(base + '.csv', '\uFEFF' + lines.join('\r\n') + '\r\n', {encoding:'utf8', flag:'wx'});
+        exportStatus('CSV salvat. Incep generarea tabelelor Excel.');
         var cubisMessage='', cubisSucceeded=true;
         ['Cubis','Komodo','Holver'].forEach(function(kind){
+            exportStatus(kind+': generare Excel...');
             try {
                 if(!readerConfig || !readerConfig.node || !readerConfig.cubis_script)
                     throw Error('Lipseste pachetul comun Export Tabele de langa script.');
@@ -334,10 +357,12 @@
                         throw Error('Fisierul Excel nu poate fi verificat pe disc: '+file);
                 });
                 cubisMessage+=kind+' REUSIT: '+written.join('\n')+'\nRanduri grupate: '+result.rows+'\n\n';
+                exportStatus(kind+' REUSIT: '+result.rows+' randuri | '+written.join(' | '));
             } catch(error) {
                 cubisSucceeded=false;
                 var detail=error.stderr?String(error.stderr):String(error.message||error);
                 cubisMessage+=kind+' CU PROBLEME: '+detail.slice(0,900)+'\n\n';
+                exportStatus(kind+' EROARE: '+detail.slice(0,900));
             }
         });
         var folderOpenError = '';
@@ -348,10 +373,13 @@
             folderProcess.on('error', function () { /* Export already saved; folder path is shown below. */ });
             folderProcess.unref();
         } catch (_) { folderOpenError = '\nFolderul nu a putut fi deschis automat.'; }
+        exportStatus('Folder rezultate: '+folder);
+        fs.writeFileSync(exportState,cubisSucceeded?'done':'error','utf8');
         alert((cubisSucceeded ? 'EXPORT CUBIS + KOMODO + HOLVER REUSIT\n\n' : 'EXPORT CU PROBLEME\n\n')+
             cubisMessage+'\n\nCSV si raport JSON salvate:\n'+base+
             (rows.length ? '' : '\nNu s-au gasit placi cu dimensiuni accesibile in acest context.')+folderOpenError);
     } catch (e) {
+        try{exportStatus('EXPORT OPRIT: '+String(e&&e.message||e));if(exportState)fs.writeFileSync(exportState,'error','utf8');}catch(ignore){}
         alert('EXPORT OPRIT\n' + String(e && e.message || e));
     }
 })();

@@ -1,6 +1,9 @@
 EXPORT TABELE - Cubis / Komodo / Holver
 
 In BAZIS rulati scriptul Export Cubis.js aflat langa acest folder.
+Terminalul de progres se deschide automat inainte de citirea modelului.
+Arata citirea placilor, accesul la baza si rezultatul fiecarui tabel Excel.
+La final ramane deschis; poate fi inchis dupa mesajul TERMINAT.
 Node, Python si componentele pentru Excel sunt in acest folder comun.
 Nu sunt necesare Codex, o instalare locala Python/Node sau MCP activ.
 
