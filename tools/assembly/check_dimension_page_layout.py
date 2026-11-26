@@ -7,6 +7,20 @@ from dimension_sheets import write_sheets,native_bands
 from dimension_page_layout import nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions,grouped_coordinates,DIMENSION_START,DIMENSION_STEP,PADDING
 
 class PageLayout(unittest.TestCase):
+    def test_notch_chain_tracks_rotated_view_and_converts_each_vertex_once(self):
+        from dimension_sheets import THROUGH
+        from unittest.mock import Mock
+        points=[[0,0],[1327,0],[1327,412],[672.5,412],[672.5,206],[654.5,206],[654.5,412],[0,412]]
+        for convert,expected in [(lambda p:[p[1],1327-p[0]],'right'),(lambda p:[412-p[1],p[0]],'left')]:
+            transform=Mock(side_effect=convert)
+            sides=nearest_dimension_sides([],points,transform,412,1327,THROUGH)
+            self.assertEqual(transform.call_count,len(points))
+            chain=[value-float(source.split(':')[1]) for value,_,source in sides[expected] if source.startswith('step:')]
+            self.assertEqual(chain,[654.5,18,654.5])
+    def test_empty_contour_does_not_invent_steps(self):
+        sides=nearest_dimension_sides([],[],lambda p:p,100,50,None)
+        self.assertTrue(all(not entries for entries in sides.values()))
+
     def test_top_notch_chain_stays_on_top_and_bottom_notch_on_bottom(self):
         from dimension_sheets import THROUGH
         points=[[0,0],[1327,0],[1327,412],[672.5,412],[672.5,206],[654.5,206],[654.5,412],[0,412]]

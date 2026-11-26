@@ -17,8 +17,10 @@ def grouped_coordinates(entries):
 
 def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
     result={side:[] for side in ['bottom','top','left','right']}
+    contour_points=[convert(q) for q in outer]
+    contour_edges=list(zip(contour_points,contour_points[1:]+contour_points[:1]))
     points=[(convert(h['position']),h['color'],'hole') for h in holes]
-    points.extend((convert(q),contour_color,'contour') for q in outer)
+    points.extend((q,contour_color,'contour') for q in contour_points)
     for q,color,source in points:
         if .01<q[0]<width-.01:result['top' if q[1]>height/2 else 'bottom'].append((q[0],color,source))
         if .01<q[1]<height-.01:result['right' if q[0]>width/2 else 'left'].append((q[1],color,source))
@@ -27,17 +29,20 @@ def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
         values=[v for v,_,source in result[primary] if source=='contour']
         result[opposite]=[entry for entry in result[opposite] if not (entry[2]=='contour' and any(abs(entry[0]-v)<=.01 for v in values) and not any(source=='hole' and abs(entry[0]-v)<=.01 for v,_,source in result[opposite]))]
     # Add local step lengths in addition to their positions from the origin.
-    contour_points=[convert(q) for q in outer]
     for axis,extent,side in [(0,width,'bottom'),(1,height,'left')]:
         values=[]
         for value in sorted(q[axis] for q in contour_points):
             if not values or value-values[-1]>.01:values.append(value)
         intervals=list(zip(values,values[1:]))
-        def native_edge(start,end):
-            return any(abs(a[axis^1]-b[axis^1])<=.01 and abs(min(a[axis],b[axis])-start)<=.01 and abs(max(a[axis],b[axis])-end)<=.01 for a,b in zip(contour_points,contour_points[1:]+contour_points[:1]))
+        # Project each real straight edge once; reuse matches for both chain
+        # detection and local steps instead of scanning every vertex twice.
+        edge_ranges=[(min(a[axis],b[axis]),max(a[axis],b[axis]))
+                     for a,b in contour_edges if abs(a[axis^1]-b[axis^1])<=.01 and abs(a[axis]-b[axis])>.01]
+        native_intervals={(start,end) for start,end in intervals
+                          if any(abs(low-start)<=.01 and abs(high-end)<=.01 for low,high in edge_ranges)}
         # A symmetric interrupted side is clearest as a complete chain, not
         # a chain plus redundant cumulative coordinates at each shoulder.
-        if len(intervals)>=3 and abs((intervals[0][1]-intervals[0][0])-(intervals[-1][1]-intervals[-1][0]))<=.01 and all(native_edge(a,b) for a,b in intervals):
+        if len(intervals)>=3 and abs((intervals[0][1]-intervals[0][0])-(intervals[-1][1]-intervals[-1][0]))<=.01 and all(interval in native_intervals for interval in intervals):
             # Locate the opening/step from its internal-axis vertices, rather
             # than using a fixed bottom/left rail for every chain.
             normal_extent=height if axis==0 else width
@@ -51,8 +56,7 @@ def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
             for start,end in intervals:result[side].append((end,contour_color,'step:'+str(start)))
             continue
         for start,end in intervals:
-            actual_edge=any(abs(a[axis^1]-b[axis^1])<=.01 and abs(min(a[axis],b[axis])-start)<=.01 and abs(max(a[axis],b[axis])-end)<=.01 for a,b in zip(contour_points,contour_points[1:]+contour_points[:1]))
-            if actual_edge and start>.01 and .01<end-start<extent/2:
+            if (start,end) in native_intervals and start>.01 and .01<end-start<extent/2:
                 result[side].append((end,contour_color,'step:'+str(start)))
     return result
 
