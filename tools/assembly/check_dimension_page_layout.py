@@ -7,6 +7,16 @@ from dimension_sheets import write_sheets,native_bands
 from dimension_page_layout import nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions,grouped_coordinates,DIMENSION_START,DIMENSION_STEP,PADDING
 
 class PageLayout(unittest.TestCase):
+    def test_top_notch_chain_stays_on_top_and_bottom_notch_on_bottom(self):
+        from dimension_sheets import THROUGH
+        points=[[0,0],[1327,0],[1327,412],[672.5,412],[672.5,206],[654.5,206],[654.5,412],[0,412]]
+        for mirrored,side,other in [(False,'top','bottom'),(True,'bottom','top')]:
+            shape=[[x,412-y if mirrored else y] for x,y in points]
+            sides=nearest_dimension_sides([],shape,lambda p:p,1327,412,THROUGH)
+            chain=[v-float(src.split(':')[1]) for v,_,src in sides[side] if src.startswith('step:')]
+            self.assertEqual(chain,[654.5,18,654.5])
+            self.assertFalse(any(src.startswith('step:') or src=='contour' for _,_,src in sides[other]))
+
     def test_symmetric_middle_step_uses_chain_without_cumulative_316(self):
         from dimension_sheets import THROUGH
         points=[[0,0],[200,0],[200,298],[400,298],[400,316],[200,316],[200,614],[0,614]]

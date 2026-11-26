@@ -38,6 +38,14 @@ def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
         # A symmetric interrupted side is clearest as a complete chain, not
         # a chain plus redundant cumulative coordinates at each shoulder.
         if len(intervals)>=3 and abs((intervals[0][1]-intervals[0][0])-(intervals[-1][1]-intervals[-1][0]))<=.01 and all(native_edge(a,b) for a,b in intervals):
+            # Locate the opening/step from its internal-axis vertices, rather
+            # than using a fixed bottom/left rail for every chain.
+            normal_extent=height if axis==0 else width
+            feature=[q[axis^1] for q in contour_points if .01<q[axis]<extent-.01]
+            if feature:
+                near_low=min(abs(v) for v in feature)
+                near_high=min(abs(normal_extent-v) for v in feature)
+                side=('top' if axis==0 else 'right') if near_high<near_low else ('bottom' if axis==0 else 'left')
             for current in (('bottom','top') if axis==0 else ('left','right')):
                 result[current]=[entry for entry in result[current] if entry[2]!='contour' or any(source=='hole' and abs(entry[0]-v)<=.01 for v,_,source in result[current])]
             for start,end in intervals:result[side].append((end,contour_color,'step:'+str(start)))
