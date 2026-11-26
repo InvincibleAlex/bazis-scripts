@@ -55,7 +55,7 @@ def run_renderer(args,console):
 
 def run(job, source, output=None, *, wait_seconds=1800):
     log=Path(str(job)+'.log');state=Path(str(job)+'.state');offset=0
-    console=LiveConsole()
+    console=LiveConsole();success=False
     try:
         console.write('BAZIS | Export cote\n');console.start()
         Path(str(job)+'.opened').write_text('ready',encoding='utf-8')
@@ -84,6 +84,7 @@ def run(job, source, output=None, *, wait_seconds=1800):
         if result.returncode:raise RuntimeError('Generatorul PDF a esuat (cod %s). Vezi eroarea de mai sus.'%result.returncode)
         receipt=json.loads(result.stdout)
         if not receipt.get('ok') or not output.is_file() or not output.stat().st_size:raise RuntimeError('PDF neconfirmat.')
+        success=True
         console.write('\nTERMINAT | %s placi | %s gauri | %s pagini'%(receipt['panels'],receipt['holes'],receipt['pages']))
         console.write('PDF: '+str(output)+'\nModelul BAZIS nu a fost modificat.')
         return 0
@@ -92,9 +93,11 @@ def run(job, source, output=None, *, wait_seconds=1800):
         return 1
     finally:
         console.stop()
-        for file in (source,log,state,Path(str(job)+'.opened'),Path(str(job)+'.output')):
-            try:file.unlink(missing_ok=True)
-            except OSError:pass
+        if success:
+            files=[source,log,state,Path(str(job)+'.opened'),Path(str(job)+'.output'),output.with_suffix('.cote.json')]
+            for file in files:
+                try:file.unlink(missing_ok=True)
+                except OSError as error:console.write('Fisier auxiliar pastrat: '+str(file)+' | '+str(error))
 
 def main():
     sys.stdout.reconfigure(encoding='utf-8');sys.stderr.reconfigure(encoding='utf-8')

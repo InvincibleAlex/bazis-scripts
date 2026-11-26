@@ -153,8 +153,19 @@
    if(axis&&!shaftAxes.every(function(a){return Math.abs(a.reduce(function(s,v,i){return s+v*axis[i];},0))>.995;}))axis=null;
    return {edges:edges,approximate_components:approximate,native_edge_components:nativeComponents,insertion_axis:axis};
   }
-  var cfg=JSON.parse(fs.readFileSync(path.join(os.homedir(),'.bazis-mcp','material-db-reader.json'),'utf8'));
-  var helper=path.join(os.homedir(),'Documents','BazisMCP','tools','assembly','export_assembly.py');
+  // Share the verified PDF workers so success cleanup is consistent across PCs.
+  var packageRoot=path.join('\\RG\Bazis\Scripts','Export Cote');
+  if(typeof __dirname==='string'&&fs.existsSync(path.join(__dirname,'Export Cote','tools','assembly','assembly_console.py')))
+   packageRoot=path.join(__dirname,'Export Cote');
+  var packagedPython=path.join(packageRoot,'runtime','python','python.exe');
+  var packagedHelper=path.join(packageRoot,'tools','assembly','export_assembly.py');
+  var cfg,helper;
+  if(fs.existsSync(packagedPython)&&fs.existsSync(packagedHelper)&&fs.existsSync(path.join(packageRoot,'tools','assembly','assembly_console.py'))){
+   cfg={python:packagedPython};helper=packagedHelper;
+  }else{
+   cfg=JSON.parse(fs.readFileSync(path.join(os.homedir(),'.bazis-mcp','material-db-reader.json'),'utf8'));
+   helper=path.join(os.homedir(),'Documents','BazisMCP','tools','assembly','export_assembly.py');
+  }
   if(!fs.existsSync(helper))throw Error('Lipseste generatorul: '+helper);
   var now=new Date();
   function pad(n){return ('0'+n).slice(-2);}

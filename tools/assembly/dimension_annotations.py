@@ -44,7 +44,7 @@ class AnnotationLayout:
             for dx,dy in [(0,1),(0,-1),(1,0),(-1,0),(1,1),(-1,1),(1,-1),(-1,-1)]:candidates.append((radius*dx,radius*dy))
         selected=None
         for dx,dy in candidates:
-            if secondary_rail is not None and y+dy<secondary_rail+3:continue
+            if secondary_rail is not None and y+dy<secondary_rail+1.5:continue
             box=self.text_box(c,x+dx,y+dy,text,centered,secondary_colors,secondary_rail)
             if self.fits(box):selected=(x+dx,y+dy,box);break
         if selected is None:
@@ -53,7 +53,7 @@ class AnnotationLayout:
             for yy in range(math.ceil(self.bounds[1]+10),math.floor(self.bounds[3]-10),10):
                 for xx in range(math.ceil(self.bounds[0]+10),math.floor(self.bounds[2]-10),10):
                     lx=(d*(xx-e)-cc*(yy-f))/det;ly=(-b*(xx-e)+a*(yy-f))/det
-                    if secondary_rail is not None and ly<secondary_rail+3:continue
+                    if secondary_rail is not None and ly<secondary_rail+1.5:continue
                     box=self.text_box(c,lx,ly,text,centered,secondary_colors,secondary_rail)
                     if self.fits(box):selected=(lx,ly,box);break
                 if selected:break

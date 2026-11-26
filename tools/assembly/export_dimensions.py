@@ -101,23 +101,24 @@ def dimension_label(c,x,y,label,secondary_colors,rail=None):
             c.setStrokeColor(color);c.line(x-half,(y if rail is None else rail)-3.5-index*2.2,x+half,(y if rail is None else rail)-3.5-index*2.2)
 
 
-def dimension(c,a,b,offset,label,vertical=False,color=None,secondary_colors=()):
+def dimension(c,a,b,offset,label,vertical=False,color=None,secondary_colors=(),overall=False):
     c.saveState();c.setStrokeColorRGB(.28,.28,.28);c.setFillColorRGB(.15,.15,.15);c.setLineWidth(.2);c.setFont('Body',7)
     if color is not None:c.setStrokeColor(color);c.setFillColor(color)
+    if overall:c.setFillAlpha(.5)
     layout=getattr(c,'annotation_layout',None)
     if layout:
         if vertical:segments=[(a,[offset-3,a[1]]),(b,[offset-3,b[1]]),([offset,a[1]],[offset,b[1]])]
         else:segments=[(a,[a[0],offset-3]),(b,[b[0],offset-3]),([a[0],offset],[b[0],offset])]
         for start,end in segments:layout.add_stroke(c,start,end)
     if vertical:
-        x=offset;c.line(a[0],a[1],x-3,a[1]);c.line(b[0],b[1],x-3,b[1]);c.line(x,a[1],x,b[1])
+        x=offset;c.setStrokeAlpha(.5);c.line(a[0],a[1],x-3,a[1]);c.line(b[0],b[1],x-3,b[1]);c.setStrokeAlpha(.5 if overall else 1);c.line(x,a[1],x,b[1])
         for y in [a[1],b[1]]:c.line(x-2,y-2,x+2,y+2)
-        c.translate(x-(6+max(0,len(secondary_colors)-1)*2.2 if secondary_colors else 3),(a[1]+b[1])/2);c.rotate(90)
-        dimension_label(c,0,0,label,secondary_colors,rail=-(6+max(0,len(secondary_colors)-1)*2.2 if secondary_colors else 3))
+        c.translate(x-(3+max(0,len(secondary_colors)-1)*2.2 if secondary_colors else 1.5),(a[1]+b[1])/2);c.rotate(90)
+        dimension_label(c,0,0,label,secondary_colors,rail=-(3+max(0,len(secondary_colors)-1)*2.2 if secondary_colors else 1.5))
     else:
-        y=offset;c.line(a[0],a[1],a[0],y-3);c.line(b[0],b[1],b[0],y-3);c.line(a[0],y,b[0],y)
+        y=offset;c.setStrokeAlpha(.5);c.line(a[0],a[1],a[0],y-3);c.line(b[0],b[1],b[0],y-3);c.setStrokeAlpha(.5 if overall else 1);c.line(a[0],y,b[0],y)
         for x in [a[0],b[0]]:c.line(x-2,y-2,x+2,y+2)
-        dimension_label(c,(a[0]+b[0])/2,y+(6+max(0,len(secondary_colors)-1)*2.2 if secondary_colors else 3),label,secondary_colors,rail=y)
+        dimension_label(c,(a[0]+b[0])/2,y+(3+max(0,len(secondary_colors)-1)*2.2 if secondary_colors else 1.5),label,secondary_colors,rail=y)
     c.restoreState()
 
 def curve(c,e,project):

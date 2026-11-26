@@ -274,7 +274,7 @@ def aligned_dimension(c,a,b,offset,label,color):
     if length<.0001:return
     normal=[-dy/length,dx/length];a2=[a[i]+normal[i]*offset for i in range(2)];b2=[b[i]+normal[i]*offset for i in range(2)]
     c.saveState();c.setStrokeColor(color);c.setFillColor(color);c.setLineWidth(.2);c.setFont('Body',7)
-    c.line(*a,*a2);c.line(*b,*b2);c.line(*a2,*b2)
+    c.setStrokeAlpha(.5);c.line(*a,*a2);c.line(*b,*b2);c.setStrokeAlpha(1);c.line(*a2,*b2)
     if getattr(c,'annotation_layout',None):
         for start,end in [(a,a2),(b,b2),(a2,b2)]:c.annotation_layout.add_stroke(c,start,end)
     for q in [a2,b2]:c.line(q[0]-2,q[1]-2,q[0]+2,q[1]+2)
@@ -282,8 +282,24 @@ def aligned_dimension(c,a,b,offset,label,color):
     if angle>90:angle-=180
     if angle<-90:angle+=180
     c.translate((a2[0]+b2[0])/2,(a2[1]+b2[1])/2);c.rotate(angle)
-    if getattr(c,'annotation_layout',None):c.annotation_layout.draw(c,0,3,label,centered=True,leader=False)
-    else:c.drawCentredString(0,3,label)
+    if getattr(c,'annotation_layout',None):c.annotation_layout.draw(c,0,1.5,label,centered=True,leader=False)
+    else:c.drawCentredString(0,1.5,label)
+    c.restoreState()
+
+
+def hatch_closed_opening(c,loop,convert,project):
+    points=loop.get('points',[])
+    if not loop.get('interior') or len(points)<4 or math.dist(points[0],points[-1])>.001:return
+    points=[project(convert(point)) for point in points]
+    xmin=min(p[0] for p in points);xmax=max(p[0] for p in points)
+    ymin=min(p[1] for p in points);ymax=max(p[1] for p in points)
+    path=c.beginPath();path.moveTo(*points[0])
+    for point in points[1:]:path.lineTo(*point)
+    path.close();c.saveState();c.clipPath(path,stroke=0,fill=0)
+    c.setStrokeColor(HexColor('#aaaaaa'));c.setLineWidth(.15);c.setStrokeAlpha(1)
+    spacing=4
+    for index in range(math.floor((ymin-xmax)/spacing),math.ceil((ymax-xmin)/spacing)+1):
+        intercept=index*spacing;c.line(xmin,xmin+intercept,xmax,xmax+intercept)
     c.restoreState()
 
 
@@ -399,6 +415,7 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
         c.setStrokeColor(INK);c.setLineWidth(.25)
         for a,b in edges:c.line(*native(a),*native(b))
     for loop in loops:
+        hatch_closed_opening(c,loop,convert,project)
         c.setStrokeColor(THROUGH if loop['interior'] else INK)
         for e in loop['elements']:curve(c,e,native)
     # Contour vertices are located from the view origin, with common coordinates stacked once.
@@ -434,8 +451,8 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     y_side=envelope.get('overall_sides',{}).get('y','left')
     x_datum=height if x_side=='top' else 0
     y_datum=width if y_side=='right' else 0
-    dimension(c,project([0,x_datum]),project([width,x_datum]),(top+envelope['overall']['top'] if x_side=='top' else bottom-envelope['overall']['bottom']),board_fmt(width),color=CONTOUR)
-    dimension(c,project([y_datum,0]),project([y_datum,height]),(right+envelope['overall']['right'] if y_side=='right' else left-envelope['overall']['left']),board_fmt(height),True,color=CONTOUR)
+    dimension(c,project([0,x_datum]),project([width,x_datum]),(top+envelope['overall']['top'] if x_side=='top' else bottom-envelope['overall']['bottom']),board_fmt(width),color=CONTOUR,overall=True)
+    dimension(c,project([y_datum,0]),project([y_datum,height]),(right+envelope['overall']['right'] if y_side=='right' else left-envelope['overall']['left']),board_fmt(height),True,color=CONTOUR,overall=True)
     grain=grain_vector(p)
     if grain:
         d=vector(grain);length=min(45,max(14,min(width,height)*scale*.3));nx,ny=-d[1],d[0]

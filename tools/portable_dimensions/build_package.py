@@ -21,7 +21,7 @@ def copy_dependencies(destination):
     return versions
 
 def helper_files(source):
-    pending=['export_dimensions','dimensions_console'];seen=set()
+    pending=['export_dimensions','dimensions_console','assembly_console'];seen=set()
     while pending:
         name=pending.pop()
         if name in seen:continue
