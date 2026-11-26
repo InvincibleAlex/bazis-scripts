@@ -183,7 +183,7 @@ def frame_pdf(path,template,report,contexts):
         footer=BytesIO();mask=canvas.Canvas(footer,pagesize=(width,height))
         mask.setFillColorRGB(1,1,1);mask.rect(width-90,14,75,25,stroke=0,fill=1);mask.save();footer.seek(0)
         page.merge_page(PdfReader(footer).pages[0])
-        transform=content_transform(width,height,model['bounds'])
+        transform=Transformation() if contexts.get(number,{}).get('_specification') else content_transform(width,height,model['bounds'])
         result.merge_transformed_page(page,transform,over=False)
         writer.add_page(result)
     temporary=path.with_suffix('.cartus.tmp.pdf')
