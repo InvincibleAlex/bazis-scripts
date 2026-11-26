@@ -97,6 +97,9 @@ def read_materials(items):
 
 if __name__ == '__main__':
     try:
+        # BAZIS execFileSync sends JSON as UTF-8 bytes. Windows pipe defaults
+        # otherwise decode Romanian material names with the local code page.
+        sys.stdin.reconfigure(encoding='utf-8')
         items = json.load(sys.stdin)
         if not isinstance(items, list) or len(items) > 100000:
             raise ValueError('Invalid request size')
