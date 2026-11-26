@@ -16,10 +16,10 @@ BLUE=HexColor('#1668b2')
 def fmt(value):
     if value is None:return '?'
     number=float(value)
-    # Remove up to one micron of native-coordinate noise near a hundredth mm.
-    # Genuine fractions (200.75, 324.657, 199.998) remain unchanged.
+    # Remove up to two microns of native-coordinate noise near a hundredth mm.
+    # Genuine fractions (200.75, 324.657) remain unchanged.
     hundredth=round(number,2)
-    if abs(number-hundredth)<=.00100001:number=hundredth
+    if abs(number-hundredth)<=.00200001:number=hundredth
     return f'{number:.3f}'.rstrip('0').rstrip('.')
 
 def xy(p):return [p['x'],p['y']] if isinstance(p,dict) else list(p[:2])

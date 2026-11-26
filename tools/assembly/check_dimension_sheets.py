@@ -82,7 +82,10 @@ class Sheets(unittest.TestCase):
         self.assertEqual(board_fmt(200.754),'200.75')
         self.assertEqual(board_fmt(100),'100')
         self.assertEqual(fmt(200.75),'200.75')
-        self.assertEqual(fmt(199.998),'199.998')
+        self.assertEqual(fmt(199.998),'200')
+        self.assertEqual(fmt(140.998),'141')
+        self.assertEqual(fmt(141.002),'141')
+        self.assertEqual(fmt(140.997),'140.997')
         for value,expected in [(695.499,'695.5'),(66.999,'67'),(1323.999,'1324'),(324.657,'324.657'),(200.751,'200.75')]:
             self.assertEqual(fmt(value),expected)
     def test_empty_opposite_face_has_no_duplicate_view_or_table(self):
