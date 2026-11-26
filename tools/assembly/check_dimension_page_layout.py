@@ -7,6 +7,25 @@ from dimension_sheets import write_sheets,native_bands
 from dimension_page_layout import nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions,grouped_coordinates,DIMENSION_START,DIMENSION_STEP,PADDING
 
 class PageLayout(unittest.TestCase):
+    def test_shared_coordinates_merge_opposite_colors_but_not_chain_segments(self):
+        from dimension_page_layout import merge_opposite_coordinates
+        from dimension_sheets import THROUGH,FACE,EDGE,baseline_dimensions
+        from unittest.mock import patch,MagicMock
+        sides={'bottom':[(663.5,FACE,'hole')],'top':[(663.5,THROUGH,'hole'),(663.5,FACE,'hole')],
+               'left':[(43,THROUGH,'hole'),(43,EDGE,'hole')], 'right':[(43,EDGE,'hole')]}
+        merge_opposite_coordinates(sides)
+        self.assertEqual(sides['bottom'],[]);self.assertEqual(sides['right'],[])
+        self.assertEqual(len(sides['top']),2);self.assertEqual(len(sides['left']),2)
+        with patch('dimension_sheets.dimension') as draw:
+            baseline_dimensions(MagicMock(),lambda p:p,sides['top'],0,0,0,'top',1327,430)
+            self.assertEqual(draw.call_count,1)
+            self.assertEqual(draw.call_args.kwargs['color'],THROUGH)
+            self.assertEqual(draw.call_args.kwargs['secondary_colors'],[FACE])
+        # Same printed length is not sufficient to merge different chain spans.
+        sides={'bottom':[(18,THROUGH,'step:0')],'top':[(118,THROUGH,'step:100')],'left':[],'right':[]}
+        merge_opposite_coordinates(sides)
+        self.assertTrue(sides['bottom']);self.assertTrue(sides['top'])
+
     def test_notch_chain_tracks_rotated_view_and_converts_each_vertex_once(self):
         from dimension_sheets import THROUGH
         from unittest.mock import Mock
@@ -78,10 +97,12 @@ class PageLayout(unittest.TestCase):
                 self.assertAlmostEqual(midpoint[1],record['center'][1])
                 self.assertAlmostEqual(record['start'][0],record['end'][0])
                 self.assertGreater(midpoint[0],record['center'][0])
+                self.assertGreater(midpoint[0],80)  # Beyond the main vertical dimension rail.
             else:
                 self.assertAlmostEqual(midpoint[0],record['center'][0])
                 self.assertAlmostEqual(record['start'][1],record['end'][1])
                 self.assertLess(midpoint[1],record['center'][1])
+                self.assertLess(midpoint[1],80)  # Below the main horizontal dimension rail.
     def test_secondary_line_follows_label_when_collision_moves_it(self):
         from io import BytesIO
         from reportlab.pdfgen.canvas import Canvas

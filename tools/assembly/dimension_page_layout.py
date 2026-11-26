@@ -1,5 +1,6 @@
 """Physical spacing, nearest-edge dimension planning and non-paginated table flow."""
 import math
+from decimal import Decimal,ROUND_HALF_UP
 from reportlab.lib.units import mm
 PADDING=10*mm
 DIMENSION_STEP=13
@@ -13,6 +14,33 @@ def grouped_coordinates(entries):
         if groups and not source.startswith('step:') and not groups[-1][0][2].startswith('step:') and value-groups[-1][0][0]<=.01:groups[-1].append((value,color,source))
         else:groups.append([(value,color,source)])
     return groups
+
+
+def merge_opposite_coordinates(sides):
+    """A datum coordinate is shared across opposite rails, regardless of color.
+
+    Local chain segments are deliberately excluded: equal lengths can describe
+    different pieces of the contour and must remain visible.
+    """
+    for primary,opposite in [('bottom','top'),('left','right')]:
+        coordinates={}
+        for side in [primary,opposite]:
+            for entry in sides[side]:
+                if entry[2].startswith('step:'):continue
+                key=Decimal(str(entry[0])).quantize(Decimal('.01'),rounding=ROUND_HALF_UP)
+                coordinates.setdefault(key,{primary:[],opposite:[]})[side].append(entry)
+        replacements={primary:[],opposite:[]}
+        for group in coordinates.values():
+            def score(side):
+                entries=group[side]
+                return (len(set(color for _,color,_ in entries)),any(source=='contour' for _,_,source in entries),len(entries))
+            chosen=opposite if score(opposite)>score(primary) else primary
+            for side in [chosen,opposite if chosen==primary else primary]:
+                for entry in group[side]:
+                    if entry not in replacements[chosen]:replacements[chosen].append(entry)
+        for side in [primary,opposite]:
+            sides[side]=[entry for entry in sides[side] if entry[2].startswith('step:')]+replacements[side]
+    return sides
 
 
 def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
@@ -58,7 +86,7 @@ def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
         for start,end in intervals:
             if (start,end) in native_intervals and start>.01 and .01<end-start<extent/2:
                 result[side].append((end,contour_color,'step:'+str(start)))
-    return result
+    return merge_opposite_coordinates(result)
 
 
 def dimension_envelope(sides,cuts,bands):

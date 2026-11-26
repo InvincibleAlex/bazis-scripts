@@ -355,7 +355,7 @@ def baseline_dimensions(c,project,entries,axis,left,bottom,side=None,width=0,hei
         value=sum(v for v,_,_ in group)/len(group);colors=[]
         step=next((float(source.split(':',1)[1]) for _,_,source in group if source.startswith('step:')),None)
         label=board_fmt(value-step) if step is not None else board_fmt(value) if any(source=='contour' for _,_,source in group) else fmt(value)
-        group=sorted(group,key=lambda entry:0 if entry[2]=='contour' or entry[2].startswith('step:') else 1)
+        group=sorted(group,key=lambda entry:(0 if entry[1]==THROUGH else 1,0 if entry[2]=='contour' or entry[2].startswith('step:') else 1))
         for _,color,_ in group:
             if color not in colors:colors.append(color)
         point=[value,datum[1]] if axis==0 else [datum[0],value]
