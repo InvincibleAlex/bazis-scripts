@@ -225,9 +225,7 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
             from callouts import draw_callouts
             draw_callouts(c,[(name[:50],[p for p in objects if p.get('kind')!='hardware'] or objects) for name,objects in group_items if name],items,point,(35,60,cw-70,ch-150))
             c.showPage()
-        root=next((node for node in report['nodes'] if not node.get('parent')),None)
-        furniture=next((node for node in report['nodes'] if root and node.get('parent')==root['id'] and node.get('name')),root)
-        furniture_name=(furniture.get('name','').split('\r')[0] if furniture else '') or Path(str(report.get('model','Mobilier')).replace('\\','/')).stem
+        furniture_name=str((report.get('order') or {}).get('product_name') or '').strip() or Path(str(report.get('model','Mobilier')).replace('\\','/')).stem
         picture(furniture_name if dimensions else 'Ansamblu | Vedere izometrică',[('',report['panels']+report.get('hardware',[]))],f'Detaliere montaj: {sample_module}' if sample_module else '')
         packed=[]
         for group in groups:

@@ -305,7 +305,7 @@
   // Native order metadata, independent of the model filename or folder name.
   var orderArticle=typeof Article!=='undefined'?Article:
    (typeof currentFileData!=='undefined'?get(currentFileData,'article'):null);
-  var order={name:text(get(orderArticle,'OrderName')).trim(),code:text(get(orderArticle,'OrderCode')).trim(),source:'BAZIS Article.OrderName'};
+  var order={name:text(get(orderArticle,'OrderName')).trim(),code:text(get(orderArticle,'OrderCode')).trim(),product_name:text(get(orderArticle,'Name')).trim(),source:'BAZIS Article.OrderName'};
   var report={schema:1,model:filename,order:order,nodes:nodes,panels:panels,hardware:hardware,drilling:drilling,geometry_source:'BAZIS native edges / contour extrusion / NewHoleDrilling global coordinates'};
   progress('Pregatire date pentru PDF...');
   fs.writeFileSync(input,JSON.stringify(report),'utf8');
