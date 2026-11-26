@@ -421,7 +421,7 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
         c.line(a[0]-2,a[1],a[0]+2,a[1]);c.line(a[0],a[1]-2,a[0],a[1]+2)
         positions.append((h,q,a))
     for h,q,a in sorted(positions,key=lambda item:(-item[1][1],item[1][0])):
-        c.setFont('Body',6);c.setFillColor(h['color'])
+        c.setFont('Body',6);c.setFillColor(h['color']);c.setStrokeColor(h['color'])
         c.annotation_layout.draw(c,a[0]+5,a[1]+5,h['tag'],target=a)
     side_entries=side_entries or nearest_dimension_sides(visible,outer,convert,width,height,THROUGH)
     envelope=envelope or dimension_envelope(side_entries,cuts,bands)
