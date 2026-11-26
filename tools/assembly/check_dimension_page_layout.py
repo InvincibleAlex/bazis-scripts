@@ -7,6 +7,28 @@ from dimension_sheets import write_sheets,native_bands
 from dimension_page_layout import nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions,grouped_coordinates,DIMENSION_START,DIMENSION_STEP,PADDING
 
 class PageLayout(unittest.TestCase):
+    def test_shoulders_have_local_lengths_without_duplicate_symmetric_height(self):
+        from dimension_sheets import THROUGH,EDGE,baseline_dimensions
+        from unittest.mock import patch,MagicMock
+        points=[[0,350],[1363,350],[1363,300],[1345,300],[1345,0],[36,0],[36,300],[0,300]]
+        holes=[{'position':[36,275],'color':EDGE}]
+        sides=nearest_dimension_sides(holes,points,lambda p:p,1363,350,THROUGH)
+        heights=[entry for side in ['left','right'] for entry in sides[side] if entry[2]=='contour' and entry[0]==300]
+        self.assertEqual(len(grouped_coordinates(heights)),1)
+        self.assertFalse(any(entry[2]=='contour' and entry[0]==300 for entry in sides['right']))
+        self.assertIn((350,THROUGH,'step:300'),sides['left'])
+        self.assertIn((1363,THROUGH,'step:1345'),sides['bottom'])
+        c=MagicMock()
+        with patch('dimension_sheets.dimension') as draw:
+            baseline_dimensions(c,lambda p:p,sides['top'],0,0,0,'top',1363,350)
+            shared=next(call for call in draw.call_args_list if call.args[4]=='36')
+            self.assertEqual(shared.kwargs['color'],THROUGH)
+            self.assertEqual(shared.kwargs['secondary_colors'],[EDGE])
+        with patch('dimension_sheets.dimension') as draw:
+            baseline_dimensions(c,lambda p:p,sides['left'],1,0,0,'left',1363,350)
+            step=next(call for call in draw.call_args_list if call.args[4]=='50')
+            self.assertEqual(step.args[1],[0,300]);self.assertEqual(step.args[2],[0,350])
+
     def test_secondary_color_lines_follow_actual_label_center_and_rotation(self):
         from io import BytesIO
         from reportlab.pdfgen.canvas import Canvas

@@ -10,7 +10,7 @@ def grouped_coordinates(entries):
     groups=[]
     for entry in sorted(entries,key=lambda entry:entry[0]):
         value,color=entry[:2];source=entry[2] if len(entry)>2 else 'hole'
-        if groups and value-groups[-1][0][0]<=.01:groups[-1].append((value,color,source))
+        if groups and not source.startswith('step:') and not groups[-1][0][2].startswith('step:') and value-groups[-1][0][0]<=.01:groups[-1].append((value,color,source))
         else:groups.append([(value,color,source)])
     return groups
 
@@ -22,6 +22,20 @@ def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
     for q,color,source in points:
         if .01<q[0]<width-.01:result['top' if q[1]>height/2 else 'bottom'].append((q[0],color,source))
         if .01<q[1]<height-.01:result['right' if q[0]>width/2 else 'left'].append((q[1],color,source))
+    # Shared contour coordinates are described once, even for symmetric sides.
+    for primary,opposite in [('bottom','top'),('left','right')]:
+        values=[v for v,_,source in result[primary] if source=='contour']
+        result[opposite]=[entry for entry in result[opposite] if not (entry[2]=='contour' and any(abs(entry[0]-v)<=.01 for v in values) and not any(source=='hole' and abs(entry[0]-v)<=.01 for v,_,source in result[opposite]))]
+    # Add local step lengths in addition to their positions from the origin.
+    contour_points=[convert(q) for q in outer]
+    for axis,extent,side in [(0,width,'bottom'),(1,height,'left')]:
+        values=[]
+        for value in sorted(q[axis] for q in contour_points):
+            if not values or value-values[-1]>.01:values.append(value)
+        for start,end in zip(values,values[1:]):
+            actual_edge=any(abs(a[axis^1]-b[axis^1])<=.01 and abs(min(a[axis],b[axis])-start)<=.01 and abs(max(a[axis],b[axis])-end)<=.01 for a,b in zip(contour_points,contour_points[1:]+contour_points[:1]))
+            if actual_edge and start>.01 and .01<end-start<extent/2:
+                result[side].append((end,contour_color,'step:'+str(start)))
     return result
 
 

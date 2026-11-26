@@ -356,12 +356,15 @@ def baseline_dimensions(c,project,entries,axis,left,bottom,side=None,width=0,hei
     base=project([width,height])[axis^1] if side in ('top','right') else (bottom if axis==0 else left)
     for index,group in enumerate(groups):
         value=sum(v for v,_,_ in group)/len(group);colors=[]
-        label=board_fmt(value) if all(source=='contour' for _,_,source in group) else fmt(value)
+        step=next((float(source.split(':',1)[1]) for _,_,source in group if source.startswith('step:')),None)
+        label=board_fmt(value-step) if step is not None else board_fmt(value) if any(source=='contour' for _,_,source in group) else fmt(value)
+        group=sorted(group,key=lambda entry:0 if entry[2]=='contour' or entry[2].startswith('step:') else 1)
         for _,color,_ in group:
             if color not in colors:colors.append(color)
         point=[value,datum[1]] if axis==0 else [datum[0],value]
         endpoint=project(point);offset=base+sign*(DIMENSION_START+index*DIMENSION_STEP)
-        dimension(c,origin,endpoint,offset,label,axis==1,color=colors[0],secondary_colors=colors[1:])
+        start=project([step,datum[1]] if axis==0 else [datum[0],step]) if step is not None else origin
+        dimension(c,start,endpoint,offset,label,axis==1,color=colors[0],secondary_colors=colors[1:])
 
 
 def draw_band_marker(c,label,center,target):
