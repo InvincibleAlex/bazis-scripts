@@ -24,6 +24,21 @@ def example():
     return p
 
 class Sheets(unittest.TestCase):
+    def test_hidden_operations_only_render_opposite_blind_geometry(self):
+        from unittest.mock import MagicMock
+        from dimension_sheets import draw_hidden_machining
+        c=MagicMock()
+        holes=[{'face':'Zmin','through':False,'position':[10,20],'diameter':8},
+               {'face':'Zmax','through':False,'position':[30,20],'diameter':8},
+               {'face':'Zmin','through':True,'position':[50,20],'diameter':8}]
+        cut={'face':'Zmin','through':False,'verified_rectangle':True,'corners':[[0,1],[60,1],[60,7],[0,7]]}
+        draw_hidden_machining(c,holes,[cut],False,lambda p:p,lambda p:p)
+        c.circle.assert_called_once_with(10,20,4,stroke=1,fill=0)
+        self.assertEqual(c.drawPath.call_count,1)
+        c.setDash.assert_called_once_with(2,2)
+        c.drawString.assert_not_called()
+        c.saveState.assert_called_once();c.restoreState.assert_called_once()
+
     def test_irregular_polygon_has_one_true_length_dimension_per_side(self):
         from unittest.mock import patch
         from io import BytesIO
@@ -58,7 +73,7 @@ class Sheets(unittest.TestCase):
             out=Path(temp)/'horizontal.pdf';write_sheets({'panels':[p]},out)
             page=PdfReader(out).pages[0];text=page.extract_text()
             self.assertGreater(float(page.mediabox.width),float(page.mediabox.height))
-            self.assertIn('Fața 1',text);self.assertIn('Fața 2',text)
+            self.assertIn('Găuri — Față',text);self.assertIn('Găuri — Spate',text)
             self.assertNotIn('întoarcere sus–jos',text)
 
     def test_board_rounding_does_not_round_drilling_values(self):
@@ -68,6 +83,8 @@ class Sheets(unittest.TestCase):
         self.assertEqual(board_fmt(100),'100')
         self.assertEqual(fmt(200.75),'200.75')
         self.assertEqual(fmt(199.998),'199.998')
+        for value,expected in [(695.499,'695.5'),(66.999,'67'),(1323.999,'1324'),(324.657,'324.657'),(200.751,'200.75')]:
+            self.assertEqual(fmt(value),expected)
     def test_empty_opposite_face_has_no_duplicate_view_or_table(self):
         from dimension_sheets import selected_faces
         p=example();p['holes']=[p['holes'][0]]
@@ -75,7 +92,7 @@ class Sheets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';write_sheets({'panels':[p]},out)
             text=PdfReader(out).pages[0].extract_text()
-            self.assertIn('Fața 1',text);self.assertNotIn('Fața 2',text)
+            self.assertIn('Găuri — Față',text);self.assertNotIn('Găuri — Spate',text)
         p['holes'][0]['position_global_mm'][2]=0;p['holes'][0]['direction_global']=[0,0,1]
         self.assertEqual(selected_faces(classified_holes(p,[0,0]),[]),[True])
     def test_crowded_labels_are_all_kept_and_text_never_overlaps(self):
@@ -150,7 +167,7 @@ class Sheets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';receipt=write_sheets({'panels':[p]},out)
             reader=PdfReader(out);text=reader.pages[0].extract_text()
-            self.assertEqual(receipt['pages'],1);self.assertIn('Fața 1',text);self.assertIn('Fața 2',text);self.assertIn('D1',text);self.assertIn('D2',text)
+            self.assertEqual(receipt['pages'],1);self.assertIn('Găuri — Față',text);self.assertIn('Găuri — Spate',text);self.assertIn('D1',text);self.assertIn('D2',text)
             self.assertIn('2X23_Negru_0190_PE',text);self.assertNotIn('nu este program',text)
             self.assertEqual(float(reader.pages[0].mediabox.width),1191)
         self.assertEqual(p,before)
@@ -159,6 +176,6 @@ class Sheets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';receipt=write_sheets({'panels':[p]},out)
             self.assertEqual(receipt['pages'],1)
-            for page in PdfReader(out).pages:self.assertIn('Fața 2',page.extract_text())
+            for page in PdfReader(out).pages:self.assertIn('Găuri — Spate',page.extract_text())
 
 if __name__=='__main__':unittest.main()

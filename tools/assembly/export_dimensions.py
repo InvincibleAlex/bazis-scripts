@@ -14,7 +14,13 @@ ORANGE=HexColor('#b15d12')
 BLUE=HexColor('#1668b2')
 
 def fmt(value):
-    return '?' if value is None else f'{float(value):.3f}'.rstrip('0').rstrip('.')
+    if value is None:return '?'
+    number=float(value)
+    # Remove up to one micron of native-coordinate noise near a hundredth mm.
+    # Genuine fractions (200.75, 324.657, 199.998) remain unchanged.
+    hundredth=round(number,2)
+    if abs(number-hundredth)<=.00100001:number=hundredth
+    return f'{number:.3f}'.rstrip('0').rstrip('.')
 
 def xy(p):return [p['x'],p['y']] if isinstance(p,dict) else list(p[:2])
 

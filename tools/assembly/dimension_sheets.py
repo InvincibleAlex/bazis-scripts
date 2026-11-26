@@ -289,6 +289,28 @@ def aligned_dimension(c,a,b,offset,label,color):
     c.restoreState()
 
 
+def draw_hidden_machining(c,holes,cuts,back,convert,project):
+    """Opposite-face operations are context only: no labels or coordinates."""
+    opposite='Zmax' if back else 'Zmin'
+    c.saveState();c.setStrokeColor(HexColor('#aaaaaa'));c.setLineWidth(.2);c.setDash(2,2)
+    for hole in holes:
+        if hole['face']!=opposite or hole['through']:continue
+        center=project(convert(hole['position']))
+        # Infer the view scale from two local points, also for rotated views.
+        a=project(convert([0,0]));b=project(convert([1,0]));scale=math.dist(a,b)
+        c.circle(*center,max((hole['diameter'] or 0)*scale/2,.65),stroke=1,fill=0)
+    for cut in cuts:
+        if cut.get('face')!=opposite or cut.get('through'):continue
+        if cut.get('verified_rectangle'):
+            points=[project(convert(q)) for q in cut['corners']]
+            path=c.beginPath();path.moveTo(*points[0])
+            for point in points[1:]:path.lineTo(*point)
+            path.close();c.drawPath(path)
+        else:
+            for element in cut['trajectory']:curve(c,element,lambda point:project(convert(point)))
+    c.restoreState()
+
+
 def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right):
     visible=[cut for cut in cuts if cut.get('through') or cut.get('face')==('Zmin' if back else 'Zmax') or cut.get('face') not in ('Zmin','Zmax')]
     for index,cut in enumerate(visible):
@@ -377,6 +399,7 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
         for e in loop['elements']:curve(c,e,native)
     # Contour vertices are located from the view origin, with common coordinates stacked once.
     outer=[xy(e[key]) for loop in loops if not loop['interior'] for e in loop['elements'] for key in ['start','end'] if key in e]
+    draw_hidden_machining(c,holes,cuts,back,convert,project)
     visible=face_holes(holes,back);positions=[]
     for h in visible:
         q=convert(h['position']);a=project(q);d=vector(h['direction']);color=h['color'];r=(h['diameter'] or 0)*scale/2
@@ -482,7 +505,7 @@ def write_sheets(report,output,progress=None):
                 q=convert(hole['position']);rows.append([hole['tag'],fmt(q[0]),fmt(q[1]),fmt(hole['z']),fmt(hole['diameter']),fmt(hole['depth']),'Străp.' if hole['through'] else 'Față' if hole['face'].startswith('Z') else 'Cant'])
                 colors.append(hole['color'])
             views.append({'back':back,'width':width,'height':height,'sides':side_entries,'envelope':envelope,'rows':rows,'colors':colors,
-                          'title':'Găuri — '+('Fața 2 / Spate' if back else 'Fața 1 / Față')+' — mm'})
+                          'title':'Găuri — '+('Spate' if back else 'Față')+' — mm'})
         # Fit whole tables at their original font size; only the sheet/column flow can grow.
         for attempt in range(30):
             detail_positions=section_detail_positions(page_width,page_height,len(details))
