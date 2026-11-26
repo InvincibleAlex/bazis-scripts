@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "name": "Cartuș A4",
+  "page": {
+    "width": 210,
+    "height": 297,
+    "margins": {
+      "left": 10,
+      "right": 10,
+      "top": 10,
+      "bottom": 10
+    }
+  },
+  "block": {
+    "width": 165,
+    "maxWidth": 190,
+    "dynamic": true,
+    "gap": 10,
+    "padding": 1,
+    "stroke": 0.2
+  },
+  "logo": "",
+  "parameters": [
+    {
+      "name": "proiect",
+      "value": "Proiect mobilier"
+    },
+    {
+      "name": "client",
+      "value": "Client"
+    },
+    {
+      "name": "placa",
+      "value": "Placa 01"
+    },
+    {
+      "name": "material",
+      "value": "PAL Kronospan"
+    },
+    {
+      "name": "dimensiuni",
+      "value": "1327 × 430 × 18 mm"
+    },
+    {
+      "name": "pagina",
+      "value": "1 / 24"
+    },
+    {
+      "name": "data",
+      "value": "26.11.2026"
+    }
+  ],
+  "rows": [
+    {
+      "height": 5,
+      "cells": [
+        {
+          "text": "Proiect: {proiect}",
+          "weight": 2,
+          "font": 2.2,
+          "align": "left",
+          "bold": true
+        },
+        {
+          "text": "Client: {client}",
+          "weight": 2,
+          "font": 2.2,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "height": 5,
+      "cells": [
+        {
+          "text": "{placa}",
+          "weight": 1.3,
+          "font": 2.2,
+          "align": "left"
+        },
+        {
+          "text": "{material}",
+          "weight": 2.2,
+          "font": 2.2,
+          "align": "left"
+        },
+        {
+          "text": "{dimensiuni}",
+          "weight": 1.5,
+          "font": 2.2,
+          "align": "center"
+        }
+      ]
+    },
+    {
+      "height": 5,
+      "cells": [
+        {
+          "text": "Data: {data}",
+          "weight": 1,
+          "font": 2.2,
+          "align": "left"
+        },
+        {
+          "text": "Pagina: {pagina}",
+          "weight": 1,
+          "font": 2.2,
+          "align": "right"
+        }
+      ]
+    }
+  ]
+}
