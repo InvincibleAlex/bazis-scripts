@@ -306,7 +306,7 @@ def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
         horizontal=abs(mx[0]-mn[0]-cut['length'])<.001
         if not vertical and not horizontal:
             aligned_dimension(c,project(pts[0]),project(pts[1]),14,'L '+fmt(cut['length']),MILL)
-            aligned_dimension(c,project(pts[1]),project(pts[2]),12,'l '+fmt(cut['width']),MILL)
+            if not cut.get('section_detail'):aligned_dimension(c,project(pts[1]),project(pts[2]),12,'l '+fmt(cut['width']),MILL)
             corner=min(pts,key=lambda p:min(p[0],width-p[0],p[1],height-p[1]))
             distance,axis,edge=min([(corner[0],0,0),(width-corner[0],0,width),(corner[1],1,0),(height-corner[1],1,height)])
             q=list(corner);q[axis]=edge
@@ -314,13 +314,13 @@ def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
         elif vertical:
             edge=0 if mn[0]<width-mx[0] else width;boundary=mn[0] if edge==0 else mx[0]
             dimension(c,project([edge,height]),project([boundary,height]),top+12+index*20,fmt(abs(edge-boundary)),color=MILL)
-            dimension(c,project([mn[0],height]),project([mx[0],height]),top+23+index*20,'l '+fmt(cut['width']),color=MILL)
+            if not cut.get('section_detail'):dimension(c,project([mn[0],height]),project([mx[0],height]),top+23+index*20,'l '+fmt(cut['width']),color=MILL)
             if mn[1]>.001:dimension(c,project([width,0]),project([width,mn[1]]),right+12,fmt(mn[1]),True,color=MILL)
             if cut['length']<height-.001:dimension(c,project([width,mn[1]]),project([width,mx[1]]),right+25,'L '+fmt(cut['length']),True,color=MILL)
         else:
             edge=0 if mn[1]<height-mx[1] else height;boundary=mn[1] if edge==0 else mx[1]
             dimension(c,project([width,edge]),project([width,boundary]),right+12+index*20,fmt(abs(edge-boundary)),True,color=MILL)
-            dimension(c,project([width,mn[1]]),project([width,mx[1]]),right+23+index*20,'l '+fmt(cut['width']),True,color=MILL)
+            if not cut.get('section_detail'):dimension(c,project([width,mn[1]]),project([width,mx[1]]),right+23+index*20,'l '+fmt(cut['width']),True,color=MILL)
             if mn[0]>.001:dimension(c,project([0,height]),project([mn[0],height]),top+12,fmt(mn[0]),color=MILL)
             if cut['length']<width-.001:dimension(c,project([mn[0],height]),project([mx[0],height]),top+25,'L '+fmt(cut['length']),color=MILL)
     return visible
@@ -339,20 +339,7 @@ def baseline_dimensions(c,project,entries,axis,left,bottom,side=None,width=0,hei
             if color not in colors:colors.append(color)
         point=[value,datum[1]] if axis==0 else [datum[0],value]
         endpoint=project(point);offset=base+sign*(DIMENSION_START+index*DIMENSION_STEP)
-        dimension(c,origin,endpoint,offset,label,axis==1,color=colors[0])
-        if len(colors)>1:
-            c.saveState();c.setLineWidth(.25)
-            for i,color in enumerate(colors[1:]):
-                c.setStrokeColor(color)
-                if axis==0:
-                    mid=origin[0]+(endpoint[0]-origin[0])*.25+i*4
-                    marker_y=offset+sign*3;c.line(mid-1.5,marker_y,mid+1.5,marker_y)
-                    if getattr(c,'annotation_layout',None):c.annotation_layout.reserve((mid-2,marker_y-.5,mid+2,marker_y+.5))
-                else:
-                    mid=origin[1]+(endpoint[1]-origin[1])*.25+i*4
-                    marker_x=offset+sign*3;c.line(marker_x,mid-1.5,marker_x,mid+1.5)
-                    if getattr(c,'annotation_layout',None):c.annotation_layout.reserve((marker_x-.5,mid-2,marker_x+.5,mid+2))
-            c.restoreState()
+        dimension(c,origin,endpoint,offset,label,axis==1,color=colors[0],secondary_colors=colors[1:])
 
 
 def draw_band_marker(c,label,center,target):

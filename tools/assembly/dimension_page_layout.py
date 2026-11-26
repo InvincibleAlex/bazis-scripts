@@ -32,7 +32,7 @@ def dimension_envelope(sides,cuts,bands):
         extents['right']=max(extents['right'],25+20*(len(cuts)-1))
     overall={'bottom':extents['bottom']+DIMENSION_STEP+5,'left':extents['left']+DIMENSION_STEP+5}
     extents.update(overall)
-    margins={side:max(value+12,45 if bands else 18) for side,value in extents.items()}
+    margins={side:max(value+18,45 if bands else 18) for side,value in extents.items()}
     return {'margins':margins,'overall':overall,'extents':extents}
 
 

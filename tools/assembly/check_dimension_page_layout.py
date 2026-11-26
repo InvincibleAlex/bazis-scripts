@@ -7,6 +7,52 @@ from dimension_sheets import write_sheets,native_bands
 from dimension_page_layout import nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions,grouped_coordinates,DIMENSION_START,DIMENSION_STEP,PADDING
 
 class PageLayout(unittest.TestCase):
+    def test_secondary_color_lines_follow_actual_label_center_and_rotation(self):
+        from io import BytesIO
+        from reportlab.pdfgen.canvas import Canvas
+        from dimension_annotations import AnnotationLayout
+        from export_dimensions import dimension
+        from reportlab.lib.colors import red,blue
+        for vertical in [False,True]:
+            c=Canvas(BytesIO());c.annotation_layout=AnnotationLayout((0,0,600,600))
+            a=[100,100];b=[100,400] if vertical else [400,100]
+            dimension(c,a,b,80,'387',vertical,color=red,secondary_colors=[blue])
+            record=c.annotation_layout.underlines[0]
+            midpoint=[(record['start'][i]+record['end'][i])/2 for i in range(2)]
+            if vertical:
+                self.assertAlmostEqual(midpoint[1],record['center'][1])
+                self.assertAlmostEqual(record['start'][0],record['end'][0])
+                self.assertGreater(midpoint[0],record['center'][0])
+            else:
+                self.assertAlmostEqual(midpoint[0],record['center'][0])
+                self.assertAlmostEqual(record['start'][1],record['end'][1])
+                self.assertLess(midpoint[1],record['center'][1])
+    def test_secondary_line_follows_label_when_collision_moves_it(self):
+        from io import BytesIO
+        from reportlab.pdfgen.canvas import Canvas
+        from dimension_annotations import AnnotationLayout
+        from export_dimensions import dimension
+        from reportlab.lib.colors import red,blue
+        c=Canvas(BytesIO());layout=AnnotationLayout((0,0,600,600));c.annotation_layout=layout
+        layout.reserve((210,80,290,105))
+        dimension(c,[100,100],[400,100],80,'451',color=red,secondary_colors=[blue])
+        record=layout.underlines[0]
+        self.assertNotEqual(record['center'],(250,86))
+        self.assertAlmostEqual((record['start'][0]+record['end'][0])/2,record['center'][0])
+    def test_plan_groove_width_is_only_in_section_when_detail_exists(self):
+        from io import BytesIO
+        from reportlab.pdfgen.canvas import Canvas
+        from unittest.mock import patch
+        from dimension_sheets import draw_milling
+        cut={'tag':'F01','verified_rectangle':True,'face':'Zmax','corners':[[0,12],[100,12],[100,18],[0,18]],'length':100,'width':6,'profile_depth':5,'section_detail':{'width':6}}
+        with patch('dimension_sheets.dimension') as draw:
+            draw_milling(Canvas(BytesIO()),[cut],False,lambda p:p,lambda p:p,100,60,0,0,60,100)
+            self.assertEqual([call.args[4] for call in draw.call_args_list],['12'])
+        cut['section_detail']=None
+        with patch('dimension_sheets.dimension') as draw:
+            draw_milling(Canvas(BytesIO()),[cut],False,lambda p:p,lambda p:p,100,60,0,0,60,100)
+            self.assertIn('l 6',[call.args[4] for call in draw.call_args_list])
+
     def test_holes_at_top_and_right_get_dimensions_on_their_own_edges(self):
         holes=[{'position':[872,430],'color':'fuchsia'},{'position':[912,430],'color':'fuchsia'},
                {'position':[93,0],'color':'fuchsia'},{'position':[1327,25],'color':'fuchsia'}]
