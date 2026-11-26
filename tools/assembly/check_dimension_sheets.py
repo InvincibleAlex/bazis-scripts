@@ -73,7 +73,7 @@ class Sheets(unittest.TestCase):
             out=Path(temp)/'horizontal.pdf';write_sheets({'panels':[p]},out)
             page=PdfReader(out).pages[0];text=page.extract_text()
             self.assertGreater(float(page.mediabox.width),float(page.mediabox.height))
-            self.assertIn('Găuri — Față',text);self.assertIn('Găuri — Spate',text)
+            self.assertIn('Găuri - Față [mm]',text);self.assertIn('Găuri - Spate [mm]',text)
             self.assertNotIn('întoarcere sus–jos',text)
 
     def test_all_dimensions_round_half_up_to_hundredths(self):
@@ -98,7 +98,7 @@ class Sheets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';write_sheets({'panels':[p]},out)
             text=PdfReader(out).pages[0].extract_text()
-            self.assertIn('Găuri — Față',text);self.assertNotIn('Găuri — Spate',text)
+            self.assertIn('Găuri - Față [mm]',text);self.assertNotIn('Găuri - Spate [mm]',text)
         p['holes'][0]['position_global_mm'][2]=0;p['holes'][0]['direction_global']=[0,0,1]
         self.assertEqual(selected_faces(classified_holes(p,[0,0]),[]),[True])
     def test_crowded_labels_are_all_kept_and_text_never_overlaps(self):
@@ -173,7 +173,7 @@ class Sheets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';receipt=write_sheets({'panels':[p]},out)
             reader=PdfReader(out);text=reader.pages[0].extract_text()
-            self.assertEqual(receipt['pages'],1);self.assertIn('Găuri — Față',text);self.assertIn('Găuri — Spate',text);self.assertIn('D1',text);self.assertIn('D2',text)
+            self.assertEqual(receipt['pages'],1);self.assertIn('Găuri - Față [mm]',text);self.assertIn('Găuri - Spate [mm]',text);self.assertIn('D1',text);self.assertIn('D2',text)
             self.assertIn('2X23_Negru_0190_PE',text);self.assertNotIn('nu este program',text)
             self.assertEqual(float(reader.pages[0].mediabox.width),1191)
         self.assertEqual(p,before)
@@ -182,6 +182,6 @@ class Sheets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';receipt=write_sheets({'panels':[p]},out)
             self.assertEqual(receipt['pages'],1)
-            for page in PdfReader(out).pages:self.assertIn('Găuri — Spate',page.extract_text())
+            for page in PdfReader(out).pages:self.assertIn('Găuri - Spate [mm]',page.extract_text())
 
 if __name__=='__main__':unittest.main()

@@ -8,9 +8,8 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, Flowable
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Flowable
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from assembly_fonts import register_body_font
@@ -30,7 +29,7 @@ class SingleLine(Flowable):
         self.width=width
         measured=stringWidth(self.text,'Body',font_size)
         self.font_size=font_size*min(1,width/measured) if measured else font_size
-        self.height=6.5
+        self.height=max(6.5,font_size+1)
 
     def draw(self):
         self.canv.setFillColor(colors.black)
@@ -90,8 +89,6 @@ def write_specification(report, output):
         model = layout(report['_titleblock'], bindings(report)); size = model['page_size']
         left, bottom, right, top = model['bounds']
         left += 3*mm; right -= 3*mm; bottom += 3*mm; top -= 3*mm
-    style = ParagraphStyle('spec', fontName='Body', fontSize=5.5, leading=6.5)
-    title = ParagraphStyle('spec-title', parent=style, fontSize=9, leading=11, spaceAfter=5,keepWithNext=True)
     width = right-left; story = []
     definitions = [
         ('Lista plăcilor', ['Cod', 'Nume', 'Buc.', 'Lungime', 'Lățime', 'Grosime', 'Canturi', 'Material', 'Prelucrări', 'Drept.'], [24, 22, 6, 10, 10, 10, 15, 60, 27, 9]),
@@ -100,13 +97,14 @@ def write_specification(report, output):
     ]
     for (heading, headers, weights), rows in zip(definitions, specification_rows(report)):
         if not rows: continue
-        story.append(Paragraph(heading, title))
         widths=[width*w/sum(weights) for w in weights]
         data = [[SingleLine(cell,widths[i]-4) for i,cell in enumerate(row)] for row in [headers]+rows]
-        table = Table(data, colWidths=widths, repeatRows=1, hAlign='LEFT', splitInRow=0)
+        data.insert(0,[SingleLine(heading,width-4,font_size=8)]+['']*(len(headers)-1))
+        table = Table(data, colWidths=widths, repeatRows=2, hAlign='LEFT', splitInRow=0)
         table.setStyle(TableStyle([
+            ('SPAN',(0,0),(-1,0)),
             ('GRID', (0, 0), (-1, -1), .3, colors.grey),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eeeeee')),
+            ('BACKGROUND', (0, 0), (-1, 1), colors.HexColor('#eeeeee')),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('LEFTPADDING', (0, 0), (-1, -1), 2), ('RIGHTPADDING', (0, 0), (-1, -1), 2),
             ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),

@@ -190,7 +190,7 @@ class PageLayout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/'sheet.pdf';write_sheets({'panels':[p]},out)
             text=PdfReader(out).pages[0].extract_text()
-            self.assertNotIn('Canturi',text);self.assertNotIn('Găuri —',text)
+            self.assertNotIn('Canturi',text);self.assertNotIn('Găuri -',text)
             self.assertNotIn('Face 1',text);self.assertNotIn('Face 2',text)
             self.assertNotIn('Adâncime',text)
     def test_band_table_bottom_padding_and_origin_attached_to_table_corner(self):

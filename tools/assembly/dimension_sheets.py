@@ -192,12 +192,17 @@ def table_metrics(headers,rows,font,row_height,width):
     return widths,lines,heights
 
 
-def table(c,x,top,width,headers,rows,widths=None,colors=None,font=6.5,row_height=10):
+def table(c,x,top,width,headers,rows,widths=None,colors=None,font=6.5,row_height=10,title=None):
     measured,lines,heights=table_metrics(headers,rows,font,row_height,width);width=sum(measured)
     c.saveState();cols=[x]
     for value in measured:cols.append(cols[-1]+value)
-    c.setFillColor(HexColor('#f4f6f7'));c.rect(x,top-heights[0],width,heights[0],stroke=0,fill=1)
     c.setStrokeColor(HexColor('#6b7780'));c.setLineWidth(.2)
+    if title:
+        title_height=20
+        c.setFillColor(HexColor('#f4f6f7'));c.rect(x,top-title_height,width,title_height,stroke=1,fill=1)
+        c.setFillColor(INK);c.setFont('Body',8);c.drawCentredString(x+width/2,top-title_height/2-3,title)
+        top-=title_height
+    c.setFillColor(HexColor('#f4f6f7'));c.rect(x,top-heights[0],width,heights[0],stroke=0,fill=1)
     total_height=sum(heights)
     for cx in cols:c.line(cx,top,cx,top-total_height)
     y=top;c.line(x,y,x+width,y);c.setFont('Body',font)
@@ -530,7 +535,7 @@ def write_sheets(report,output,progress=None):
                 q=convert(hole['position']);rows.append([hole['tag'],fmt(q[0]),fmt(q[1]),fmt(hole['z']),fmt(hole['diameter']),fmt(hole['depth']),'Străp.' if hole['through'] else 'Față' if hole['face'].startswith('Z') else 'Cant'])
                 colors.append(hole['color'])
             views.append({'back':back,'width':width,'height':height,'sides':side_entries,'envelope':envelope,'rows':rows,'colors':colors,
-                          'title':'Găuri — '+('Spate' if back else 'Față')+' — mm'})
+                          'title':'Găuri - '+('Spate' if back else 'Față')+' [mm]'})
         # Fit whole tables at their original font size; only the sheet/column flow can grow.
         for attempt in range(30):
             detail_positions=section_detail_positions(page_width,page_height,len(details))
@@ -547,7 +552,7 @@ def write_sheets(report,output,progress=None):
             if drawing_right-PADDING<minimum_width:page_width+=100;continue
             band_metrics=table_metrics(band_headers,band_rows,6,9,max(100,drawing_right-PADDING)) if band_rows else None
             band_top=PADDING+(sum(band_metrics[2]) if band_metrics else 0)
-            drawing_bottom=band_top+18+PADDING if band_rows else PADDING
+            drawing_bottom=band_top+20+PADDING if band_rows else PADDING
             region=(PADDING,drawing_bottom,drawing_right,page_height-PADDING-20-PADDING)
             minimum_height=sum(view['envelope']['margins']['top']+view['envelope']['margins']['bottom']+60 for view in views)+PADDING*(len(views)-1)
             if region[3]-region[1]<minimum_height:page_height+=100;continue
@@ -566,14 +571,12 @@ def write_sheets(report,output,progress=None):
             column_right=x+column['width']
             for block in column['chunks']:
                 grid_width=sum(content_column_widths(headers,block['rows'],6.5,1e9));grid_x=column_right-grid_width
-                c.setFillColor(INK);c.setFont('Body',8);c.drawRightString(column_right,block['top']-8,block['title'])
-                end=table(c,grid_x,block['top']-20,grid_width,headers,block['rows'],colors=block['colors'])
+                end=table(c,grid_x,block['top'],grid_width,headers,block['rows'],colors=block['colors'],title=block['title'])
                 draw_axes(c,grid_x-2,end-2)
             x=column_right+PADDING
         for cut,(x,top) in zip(details,detail_positions):draw_detail(c,cut,x,top)
         if band_rows:
-            c.setFillColor(INK);c.setFont('Body',8);c.drawString(PADDING,band_top+8,'Canturi')
-            table(c,PADDING,band_top,max(100,drawing_right-PADDING),band_headers,band_rows,font=6,row_height=9)
+            table(c,PADDING,band_top+20,max(100,drawing_right-PADDING),band_headers,band_rows,font=6,row_height=9,title='Canturi')
         c.setFillColor(INK);c.setFont('Body',7);c.drawRightString(page_width-PADDING,14,f'{page} / {len(panels)}');c.showPage()
     c.save()
     return {'pages':len(panels),'holes':total_holes,'panels':len(panels),'cuts':total_cuts}
