@@ -6,6 +6,26 @@ from export_assembly import box_edges
 
 
 class ModelViews(unittest.TestCase):
+    def test_four_views_are_aligned_and_chain_excludes_drill_edges(self):
+        from model_views import detail_coordinates
+        scale,views=view_layout(([0,0,0],[800,2000,500]),(0,0,800,650),four=True)
+        side,front,top,left=views
+        self.assertEqual(front[2],top[2]);self.assertEqual(left[3],front[3])
+        self.assertGreater(left[2],front[2]+800*scale)
+        p={'bounds':{'min':[0,0,0],'max':[800,2000,500]},'edges':[[[127.5,20,0],[135.5,20,0]]]}
+        self.assertEqual(detail_coordinates([p],0,0,800),[0,800])
+
+    def test_axis_depth_mask_hides_rear_edges_and_keeps_cutouts(self):
+        from visibility import DepthMask
+        mask=DepthMask((0,0,100,100),lambda p:(p[0],p[1]),1,depth_function=lambda p:p[2])
+        mask.polygon([[0,0,10],[100,0,10],[100,100,10],[0,100,10]],
+                     [[[40,40,10],[60,40,10],[60,60,10],[40,60,10]]])
+        self.assertFalse(mask.segments([10,20,0],[90,20,0]))
+        visible=mask.segments([10,50,0],[90,50,0])
+        self.assertTrue(visible)
+        self.assertGreater(visible[0][0][0],39)
+        self.assertLess(visible[-1][1][0],61)
+
     def test_first_angle_alignment_and_shared_scale(self):
         scale,views=view_layout(([10,20,30],[810,2020,530]),(30,80,570,800))
         side,front,top=views

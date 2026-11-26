@@ -26,11 +26,12 @@ def board_faces(p,offset):
     return [[vertices[i] for i in indices] for indices in [(0,1,3,2),(4,6,7,5),(0,4,5,1),(2,3,7,6),(0,2,6,4),(1,5,7,3)]]
 
 class DepthMask:
-    def __init__(self,frame,point,scale):
+    def __init__(self,frame,point,scale,depth_function=None):
+        self.depth=depth_function or depth
         self.x,self.y,w,h=frame;self.r=2;self.point=point;self.tolerance=.6/max(scale,1e-9)+.05
         self.buffer=np.full((math.ceil(h*self.r)+2,math.ceil(w*self.r)+2),-np.inf,dtype=np.float32)
-    def polygon(self,vertices):
-        screen=np.array([self.point(v) for v in vertices]);z=np.array([depth(v) for v in vertices])
+    def polygon(self,vertices,holes=()):
+        screen=np.array([self.point(v) for v in vertices]);z=np.array([self.depth(v) for v in vertices])
         pix=(screen-np.array([self.x,self.y]))*self.r
         x0=max(0,math.floor(pix[:,0].min()));x1=min(self.buffer.shape[1],math.ceil(pix[:,0].max())+1)
         y0=max(0,math.floor(pix[:,1].min()));y1=min(self.buffer.shape[0],math.ceil(pix[:,1].max())+1)
@@ -44,6 +45,14 @@ class DepthMask:
             p,q=pix[i],pix[(i+1)%len(pix)]
             if abs(q[1]-p[1])<1e-10:continue
             inside^=((p[1]>yy)!=(q[1]>yy))&(xx<(q[0]-p[0])*(yy-p[1])/(q[1]-p[1])+p[0])
+        for hole in holes:
+            loop=(np.array([self.point(v) for v in hole])-np.array([self.x,self.y]))*self.r
+            cutout=np.zeros(xx.shape,dtype=bool)
+            for i,p in enumerate(loop):
+                q=loop[(i+1)%len(loop)]
+                if abs(q[1]-p[1])<1e-10:continue
+                cutout^=((p[1]>yy)!=(q[1]>yy))&(xx<(q[0]-p[0])*(yy-p[1])/(q[1]-p[1])+p[0])
+            inside&=~cutout
         depths=coeff[0]*xx+coeff[1]*yy+coeff[2]
         buf=self.buffer[y0:y1,x0:x1];np.maximum(buf,np.where(inside,depths,-np.inf),out=buf)
     def segments(self,a,b):
@@ -52,7 +61,7 @@ class DepthMask:
         pix=np.floor((points-np.array([self.x,self.y]))*self.r).astype(int)
         valid=(pix[:,0]>=0)&(pix[:,1]>=0)&(pix[:,0]<self.buffer.shape[1])&(pix[:,1]<self.buffer.shape[0])
         surface=np.full(n,-np.inf);surface[valid]=self.buffer[pix[valid,1],pix[valid,0]]
-        z=depth(a)+ts*(depth(b)-depth(a));visible=z>=surface-self.tolerance
+        z=self.depth(a)+ts*(self.depth(b)-self.depth(a));visible=z>=surface-self.tolerance
         indices=np.flatnonzero(np.diff(np.r_[False,visible,False]));result=[]
         for first,last in zip(indices[::2],indices[1::2]):
             lo=max(0,first-.5)/(n-1);hi=min(n-1,last-.5)/(n-1)

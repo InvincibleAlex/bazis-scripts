@@ -269,6 +269,12 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
             c.save();fragments.append(preparation_file)
             body=Path(temp)/f"body-{module['id']}.pdf"
             if dimensions:
+                from model_views import write_model_views
+                module_views_file=Path(temp)/f"views-{module['id']}.pdf"
+                write_model_views(dict(report,panels=panels,hardware=fittings,_cartus_corp=module['name']),module_views_file,module_name=module['name'])
+                fragments.append(module_views_file)
+                views_page=assembled_pages+len(PdfReader(preparation_file).pages)+1
+                plan['cartus_contexts'][views_page]={'corp':module['name'],'_specification':True}
                 write_pdf(report,body,dict(plan,modules=[module]),work_views=views,include_final=False,progress=progress,inventory_only=True)
                 fragments.append(body)
                 from export_dimensions import write_dimensions
@@ -276,13 +282,13 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
                 ids={p['id'] for p in panels}
                 native_panels=[p for p in report['panels'] if p['id'] in ids]
                 write_dimensions(dict(report,panels=native_panels,_cartus_corp=module['name']),dimensions_file,progress)
-                native_start=assembled_pages+len(PdfReader(preparation_file).pages)+len(PdfReader(body).pages)+1
+                native_start=assembled_pages+len(PdfReader(preparation_file).pages)+len(PdfReader(body).pages)+2
                 if report.get('_titleblock'):
                     from titleblock import bindings
                     for index,panel in enumerate(native_panels):
                         plan['cartus_contexts'][native_start+index]=bindings(dict(report,_cartus_corp=module['name']),panel)
                 fragments.append(dimensions_file)
-                assembled_pages+=sum(len(PdfReader(f).pages) for f in [preparation_file,body,dimensions_file])
+                assembled_pages+=sum(len(PdfReader(f).pages) for f in [preparation_file,module_views_file,body,dimensions_file])
                 module_ranges[module['id']]=(module_start,assembled_pages)
                 for number in range(module_start,assembled_pages+1):plan['cartus_contexts'].setdefault(number,{'corp':module['name']})
                 continue
