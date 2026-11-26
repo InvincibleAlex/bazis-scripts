@@ -56,13 +56,13 @@ async function main(){
  const templateBook=await SpreadsheetFile.importXlsx(await FileBlob.load(template));
  function catalog(sheet){return templateBook.worksheets.getItem(sheet).getRange('A2:A'+(sheet==='PAL'?2000:3000)).values.flat().filter(v=>typeof v==='string'&&v);}
  const pal=catalog('PAL'),abs=catalog('ABS');
- const rows=groupedPlateRows(report.placi.filter(isPalPanel),transformPanel,{byMaterial:true});
+ const rows=groupedPlateRows(report.placi.filter(isPalPanel),transformPanel);
  for(const row of rows){
   requireValue(pal.filter(v=>v===row[1]).length===1,`PAL lipsa sau duplicat in Cubis: ${row[1]}`);
   for(const sign of row.slice(6,10).filter(Boolean))requireValue(abs.filter(v=>v===sign).length===1,`ABS lipsa sau duplicat in Cubis: ${sign}`);
  }
  requireValue(rows.length>0,'Modelul nu contine panouri PAL sau blat');
- // Keep each PAL together; stable sort keeps model order inside a material.
+ // Material selectors follow first occurrence in the shared piece-code order.
  const firstSeen=new Map();rows.forEach(r=>{if(!firstSeen.has(r[1]))firstSeen.set(r[1],firstSeen.size);});
  const materials=[...firstSeen.keys()],bands=distinctBands(rows);
  requireValue(rows.length<=MAX_ROWS,`Sablonul Cubis are ${MAX_ROWS} randuri pregatite; modelul are ${rows.length}`);

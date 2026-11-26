@@ -8,7 +8,9 @@ export function isDirectExecution(url){
 }
 // Aggregate a plate together with its native face layers. A layer stays directly
 // below its own parent even when its material differs from the base material.
-export function groupedPlateRows(panels,transform,{byMaterial=false}={}){
+const codeOrder=new Intl.Collator('ro',{numeric:true,sensitivity:'base'});
+export function comparePlateCodes(a,b){return codeOrder.compare(String(a??''),String(b??''));}
+export function groupedPlateRows(panels,transform){
  const parents=[],byNumber=new Map(),groups=new Map(),bundles=[];
  for(const p of panels){
   if(p.tip==='dublura')continue;
@@ -25,9 +27,8 @@ export function groupedPlateRows(panels,transform,{byMaterial=false}={}){
   if(groups.has(key)){for(const row of groups.get(key))row[4]++;}
   else{groups.set(key,rows);bundles.push(rows);}
  }
- if(byMaterial){
-  const order=new Map();for(const rows of bundles)if(!order.has(rows[0][1]))order.set(rows[0][1],order.size);
-  bundles.sort((a,b)=>order.get(a[0][1])-order.get(b[0][1]));
- }
+ // Sort complete bundles, never individual layer rows. All suppliers use the
+ // same natural ascending piece-code order, independent of material and size.
+ bundles.sort((a,b)=>comparePlateCodes(a[0][0],b[0][0]));
  return bundles.flat();
 }
