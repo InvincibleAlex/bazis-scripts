@@ -4,14 +4,14 @@ import re
 import tempfile
 from collections import Counter
 from pathlib import Path
-from xml.sax.saxutils import escape
 
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, Flowable
+from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from assembly_fonts import register_body_font
 from export_dimensions import fmt, geometry, xy
@@ -20,6 +20,22 @@ from hardware_labels import article_key
 
 def natural(value):
     return [(1, int(s)) if s.isdigit() else (0, s.casefold()) for s in re.split(r'(\d+)', str(value))]
+
+
+class SingleLine(Flowable):
+    """Fit full text proportionally inside its cell, without wrapping or clipping."""
+    def __init__(self, text, width, font_size=5.5):
+        super().__init__()
+        self.text=' '.join(str(text).split())
+        self.width=width
+        measured=stringWidth(self.text,'Body',font_size)
+        self.font_size=font_size*min(1,width/measured) if measured else font_size
+        self.height=6.5
+
+    def draw(self):
+        self.canv.setFillColor(colors.black)
+        self.canv.setFont('Body',self.font_size)
+        self.canv.drawString(0,1,self.text)
 
 
 def specification_rows(report):
@@ -44,7 +60,8 @@ def specification_rows(report):
                         if abs(a[axis]-value) < .01 and abs(b[axis]-value) < .01:
                             side = name; break
             sides[side].add(types[key])
-        edging = '; '.join(f'{side}: '+', '.join(map(str, sorted(numbers))) for side, numbers in sides.items() if numbers)
+        abbreviations={'Sus':'S','Jos':'J','Stânga':'St','Dreapta':'Dr.','Contur':'Contur'}
+        edging = ', '.join(abbreviations[side] for side, numbers in sides.items() if numbers)
         cuts = (panel.get('machining') or {}).get('cuts', [])
         machining = '; '.join(dict.fromkeys(str(c.get('name') or c.get('Name') or (c.get('properties') or {}).get('Name') or (c.get('params') or {}).get('Name') or 'Frezare') for c in cuts))
         rectangular = ''
@@ -73,27 +90,28 @@ def write_specification(report, output):
         model = layout(report['_titleblock'], bindings(report)); size = model['page_size']
         left, bottom, right, top = model['bounds']
         left += 3*mm; right -= 3*mm; bottom += 3*mm; top -= 3*mm
-    style = ParagraphStyle('spec', fontName='Body', fontSize=8, leading=10)
-    title = ParagraphStyle('spec-title', parent=style, fontSize=12, leading=16, spaceAfter=8)
+    style = ParagraphStyle('spec', fontName='Body', fontSize=5.5, leading=6.5)
+    title = ParagraphStyle('spec-title', parent=style, fontSize=9, leading=11, spaceAfter=5,keepWithNext=True)
     width = right-left; story = []
     definitions = [
-        ('Lista plăcilor', ['Cod', 'Nume', 'Buc.', 'Lungime', 'Lățime', 'Grosime', 'Canturi', 'Material', 'Prelucrări', 'Drept.'], [25, 21, 8, 14, 13, 14, 25, 34, 19, 10]),
+        ('Lista plăcilor', ['Cod', 'Nume', 'Buc.', 'Lungime', 'Lățime', 'Grosime', 'Canturi', 'Material', 'Prelucrări', 'Drept.'], [24, 22, 6, 10, 10, 10, 15, 60, 27, 9]),
         ('Canturi', ['Nr.', 'Nume', 'Desemnare', 'Grosime'], [10, 70, 65, 18]),
         ('Feronerie', ['Nr.', 'Articol', 'Nume', 'Bucăți'], [10, 30, 105, 18]),
     ]
     for (heading, headers, weights), rows in zip(definitions, specification_rows(report)):
         if not rows: continue
         story.append(Paragraph(heading, title))
-        data = [[Paragraph(escape(str(cell)).replace('\n', '<br/>'), style) for cell in row] for row in [headers]+rows]
-        table = Table(data, colWidths=[width*w/sum(weights) for w in weights], repeatRows=1, hAlign='LEFT', splitInRow=1)
+        widths=[width*w/sum(weights) for w in weights]
+        data = [[SingleLine(cell,widths[i]-4) for i,cell in enumerate(row)] for row in [headers]+rows]
+        table = Table(data, colWidths=widths, repeatRows=1, hAlign='LEFT', splitInRow=0)
         table.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), .3, colors.grey),
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eeeeee')),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 3), ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-            ('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2), ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+            ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
         ]))
-        story.extend([table, Spacer(1, 10*mm)])
+        story.extend([table, Spacer(1, 5*mm)])
     doc = SimpleDocTemplate(str(output), pagesize=size, leftMargin=left, rightMargin=size[0]-right,
                            bottomMargin=bottom, topMargin=size[1]-top, allowSplitting=1)
     doc.build(story)
