@@ -5,7 +5,7 @@ from pypdf import PdfReader
 from reportlab.lib.units import mm
 from check_dimension_sheets import example
 from dimension_sheets import write_sheets
-from titleblock import bindings,layout,frame_pdf,content_transform
+from titleblock import bindings,layout,frame_pdf,content_transform,load_template
 
 
 def template():
@@ -19,6 +19,25 @@ def template():
 
 
 class TitleBlock(unittest.TestCase):
+    def test_external_logo_is_reloaded_from_template_folder(self):
+        import json,base64
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path=root/'cartus.json';path.write_text(json.dumps(template()),encoding='utf-8')
+            (root/'Parametri_cote.json').write_text(json.dumps({'logo_file':'logo.png'}),encoding='utf-8')
+            for payload in [b'first-image-bytes',b'replaced-image-bytes']:
+                (root/'logo.png').write_bytes(payload)
+                self.assertEqual(base64.b64decode(load_template(path)['logo'].split(',',1)[1]),payload)
+
+    def test_piece_tokens_are_separate_and_client_is_native_order_name(self):
+        p=example();p.update(name='Raft',designation='00.01.00',label=36)
+        report={'model':r'C:\OtherClient\Different project.b3d','order':{'name':'ClientDemo'},'_cartus_manual':{'client':'Old client'}}
+        values=bindings(report,p)
+        self.assertEqual(values['nume_placa'],'Raft');self.assertEqual(values['cod'],'00.01.00');self.assertEqual(values['placa'],'36')
+        self.assertEqual(values['client'],'ClientDemo')
+        self.assertEqual(bindings(dict(report,order={'name':''}),p)['client'],'')
+        for key in ['nume_placa','cod','placa']:self.assertEqual(bindings(report)[key],'')
+        p['designation']='';self.assertEqual(bindings(report,p)['cod'],'')
+
     def test_landscape_rotates_whole_composition_ccw_inside_frame(self):
         bounds=(40,80,570,820)
         for width,height in [(1191,842),(842,1191)]:

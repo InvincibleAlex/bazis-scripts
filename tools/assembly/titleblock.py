@@ -29,6 +29,14 @@ def load_template(explicit=None):
                     if '{nume}' in cell['text']:
                         field='proiectant' if cell['text'].strip().lower().startswith('proiectant') else 'verificator' if cell['text'].strip().lower().startswith('verificator') else 'nume'
                         cell['text']=cell['text'].replace('{nume}','{'+field+'}')
+            reference=template.get('logo_file') or load_manual_settings(path).get('logo_file')
+            if reference:
+                logo=Path(reference)
+                if not logo.is_absolute():logo=path.parent/logo
+                if logo.suffix.lower() not in ('.png','.jpg','.jpeg'):raise ValueError('Logo-ul extern trebuie să fie PNG sau JPG.')
+                if not logo.is_file():raise FileNotFoundError('Logo-ul cartușului nu există: '+str(logo))
+                mime='png' if logo.suffix.lower()=='.png' else 'jpeg'
+                template['logo']='data:image/'+mime+';base64,'+base64.b64encode(logo.read_bytes()).decode('ascii')
             return template
     if explicit:raise FileNotFoundError('Șablonul cartușului nu există: '+str(explicit))
     return None
@@ -37,21 +45,24 @@ def load_template(explicit=None):
 def bindings(report,panel=None):
     manual=report.get('_cartus_manual',{})
     values={str(k):str(v or '') for k,v in manual.items()}
+    # Older saved reports can retain an explicitly supplied client. New exports
+    # always carry the native order field, including an intentionally empty one.
+    client=str((report.get('order') or {}).get('name') or '').strip() if 'order' in report else values.get('client','')
     values.update(proiect=values.get('proiect') or Path(str(report.get('model','')).replace('\\','/')).stem,
-        client=values.get('client',''),proiectant=values.get('proiectant',''),verificator=values.get('verificator',''),
-        data=datetime.now().strftime('%d.%m.%Y'),pagina='',placa='',material='',dimensiuni='',corp=report.get('_cartus_corp',''),bucati='')
+        client=client,proiectant=values.get('proiectant',''),verificator=values.get('verificator',''),
+        data=datetime.now().strftime('%d.%m.%Y'),pagina='',placa='',nume_placa='',cod='',material='',dimensiuni='',corp=report.get('_cartus_corp',''),bucati='')
     if panel:
         from export_dimensions import geometry,fmt
         lo,hi,_,_=geometry(panel)
-        code=panel.get('designation') or panel.get('id','')
-        values.update(placa=f"Placa {panel.get('label','')} | {code}",material=str(panel.get('material','')).split('\r')[0],
+        code=panel.get('designation') or ''
+        values.update(placa=str(panel.get('label','')),nume_placa=str(panel.get('name') or ''),cod=str(code),material=str(panel.get('material','')).split('\r')[0],
             dimensiuni=' × '.join(fmt(x) for x in [hi[0]-lo[0],hi[1]-lo[1],panel['thickness']])+' mm',
-            bucati=str(report.get('_cartus_quantities',{}).get(str(code),1)))
+            bucati=str(report.get('_cartus_quantities',{}).get(str(code or panel.get('id','')),1)))
     return values
 
 
-def load_manual_settings():
-    template=Path(os.environ.get('BAZIS_COTE_TEMPLATE',r'\\RG\Bazis\Scripts\Editor Cartus\Cartus_A4_Portret_cote.json'))
+def load_manual_settings(template_path=None):
+    template=Path(template_path) if template_path else Path(os.environ.get('BAZIS_COTE_TEMPLATE',r'\\RG\Bazis\Scripts\Editor Cartus\Cartus_A4_Portret_cote.json'))
     settings=Path(os.environ.get('BAZIS_COTE_PARAMETERS',str(template.with_name('Parametri_cote.json'))))
     if not settings.is_file():settings=Path(__file__).with_name('cartus_parametri.json')
     if not settings.is_file():return {}

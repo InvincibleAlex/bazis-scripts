@@ -302,7 +302,11 @@
   progress('Calcul nativ al gaurilor in BAZIS...');
   var drilling=calculatePanelHoles(panelRefs,articleByUid);
   progress('Calcul gauri terminat: '+(drilling.hole_count||0)+' gauri');
-  var report={schema:1,model:filename,nodes:nodes,panels:panels,hardware:hardware,drilling:drilling,geometry_source:'BAZIS native edges / contour extrusion / NewHoleDrilling global coordinates'};
+  // Native order metadata, independent of the model filename or folder name.
+  var orderArticle=typeof Article!=='undefined'?Article:
+   (typeof currentFileData!=='undefined'?get(currentFileData,'article'):null);
+  var order={name:text(get(orderArticle,'OrderName')).trim(),code:text(get(orderArticle,'OrderCode')).trim(),source:'BAZIS Article.OrderName'};
+  var report={schema:1,model:filename,order:order,nodes:nodes,panels:panels,hardware:hardware,drilling:drilling,geometry_source:'BAZIS native edges / contour extrusion / NewHoleDrilling global coordinates'};
   progress('Pregatire date pentru PDF...');
   fs.writeFileSync(input,JSON.stringify(report),'utf8');
   progress('Date pregatite. Generarea PDF continua in terminal; BAZIS poate fi folosit.');

@@ -52,6 +52,9 @@ def build(destination,runtime):
     editor=Path(r'\\RG\Bazis\Scripts\Editor Cartus')
     for original,target_name in [('Cartus_A4_Portret_cote.json','cartus_cote.json'),('Parametri_cote.json','cartus_parametri.json')]:
         if (editor/original).is_file():shutil.copy2(editor/original,helpers/target_name)
+    if (editor/'Parametri_cote.json').is_file():
+        reference=json.loads((editor/'Parametri_cote.json').read_text(encoding='utf-8-sig')).get('logo_file')
+        if reference and Path(reference).name==reference and (editor/reference).is_file():shutil.copy2(editor/reference,helpers/reference)
     manifest={'schema':1,'python':'runtime/python/python.exe','console':'tools/assembly/dimensions_console.py','renderer':'tools/assembly/export_dimensions.py','dependencies':versions,
               'helpers':{file.name:hashlib.sha256(file.read_bytes()).hexdigest() for file in files}}
     (destination/'runtime.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')

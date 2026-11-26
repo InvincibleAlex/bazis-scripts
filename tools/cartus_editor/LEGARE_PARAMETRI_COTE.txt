@@ -8,15 +8,19 @@ Pozitiile celulelor nu determina continutul: legaturile folosesc numele dintre a
 AUTOMAT DIN MODEL / EXPORT
 {proiect}     Numele fisierului modelului, fara extensie. Poate fi suprascris manual.
 {corp}        Numele modulului/corpului din sectiunea curenta.
-{placa}       Numarul placii si desemnarea ei BAZIS.
+{placa}       Numai numarul placii.
+{nume_placa}  Denumirea nativa a placii (ex.: Frontal, Raft).
+{cod}         Numai codul/desemnarea placii (ex.: 00.01.00).
 {material}    Numele materialului placii.
 {dimensiuni}  Latime X, inaltime Y si grosime native, in mm.
 {bucati}      Numarul exemplarelor cu aceeasi desemnare in proiect.
 {data}        Data generarii PDF-ului.
 {pagina}      Pagina curenta / total pagini, pentru PDF-ul complet.
 
+{client}      Numele comenzii din BAZIS: Article.OrderName. Fara deducere din folder sau fisier.
+
 MANUAL IN Parametri_cote.json
-{client}, {proiectant}, {verificator}
+{proiectant}, {verificator}
 Completeaza valorile dintre ghilimele si salveaza fisierul ca UTF-8.
 Poti adauga alte chei proprii si le folosesti in celule ca {cheie}.
 Cimpurile automate pentru placa raman goale pe paginile generale ale ansamblului.
@@ -26,3 +30,8 @@ Asezarea desenelor si tabelelor se calculeaza exact ca inainte de cartus.
 Intreaga pagina rezultata este incadrata uniform in zona chenarului; continutul
 landscape se roteste ca bloc 90 grade antiorar, fara rearanjarea tabelelor sau a desenelor. Cartusul ramane drept.
 Pagina PDF fizica urmeaza dimensiunile din JSON (in acest sablon: A4 portret).
+
+LOGO EXTERN
+Cheia logo_file din Parametri_cote.json indica imaginea din folderul sablonului.
+Inlocuieste imaginea pastrand numele pentru actualizare la urmatorul export.
+Imaginea externa are prioritate fata de copia inclusa in JSON-ul editorului.
