@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from pypdf import PdfReader
 from check_dimension_sheets import example
-from specification import specification_rows, write_specification, prepend_specification
+from specification import specification_rows, write_specification, insert_specification
 
 
 class Specification(unittest.TestCase):
@@ -32,10 +32,16 @@ class Specification(unittest.TestCase):
             text='\n'.join(p.extract_text() for p in pages)
             for i in range(150): self.assertIn(f'00.{i}\n',text)
             self.assertGreaterEqual(sum(f'00.{i}\n' in pages[0].extract_text() for i in range(150)),50)
-            plan={'cartus_contexts':{1:{'corp':'Corp'}}}
-            added=prepend_specification(report,out,plan)
-            self.assertEqual(plan['cartus_contexts'][added+1],{'corp':'Corp'})
-            self.assertEqual(len(PdfReader(out).pages),count+added)
+            first_text=pages[0].extract_text()
+            plan={'cartus_contexts':{1:{'corp':'Cover'},2:{'corp':'Corp'}},'module_page_ranges':{'m':[2,count]}}
+            added=insert_specification(report,out,plan)
+            self.assertEqual(plan['cartus_contexts'][added+2],{'corp':'Corp'})
+            self.assertEqual(plan['cartus_contexts'][1],{'corp':'Cover'})
+            self.assertTrue(plan['cartus_contexts'][2]['_specification'])
+            self.assertEqual(plan['module_page_ranges']['m'],[2+added,count+added])
+            result=PdfReader(out)
+            self.assertEqual(result.pages[0].extract_text(),first_text)
+            self.assertEqual(len(result.pages),count+added)
 
 
 if __name__=='__main__': unittest.main()

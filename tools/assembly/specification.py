@@ -116,15 +116,17 @@ def write_specification(report, output):
     return len(PdfReader(output).pages)
 
 
-def prepend_specification(report, output, plan):
+def insert_specification(report, output, plan):
     with tempfile.TemporaryDirectory(prefix='cote-spec-', dir=output.parent) as folder:
         spec = Path(folder)/'spec.pdf'; count = write_specification(report, spec)
-        writer = PdfWriter(); writer.append(spec); writer.append(output)
+        original = PdfReader(output)
+        writer = PdfWriter(); writer.add_page(original.pages[0]); writer.append(spec)
+        for page in original.pages[1:]: writer.add_page(page)
         merged = Path(folder)/'merged.pdf'
         with merged.open('wb') as stream: writer.write(stream)
         merged.replace(output)
-    contexts = {int(number)+count: value for number, value in plan.get('cartus_contexts', {}).items()}
-    contexts.update({number: {'_specification': True} for number in range(1, count+1)})
+    contexts = {int(number)+(count if int(number)>1 else 0): value for number, value in plan.get('cartus_contexts', {}).items()}
+    contexts.update({number: {'_specification': True} for number in range(2, count+2)})
     plan['cartus_contexts'] = contexts
-    plan['module_page_ranges'] = {key: [start+count, end+count] for key, (start, end) in plan.get('module_page_ranges', {}).items()}
+    plan['module_page_ranges'] = {key: [start+(count if start>1 else 0), end+(count if end>1 else 0)] for key, (start, end) in plan.get('module_page_ranges', {}).items()}
     return count

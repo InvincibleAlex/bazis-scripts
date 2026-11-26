@@ -193,8 +193,8 @@ def main():
         report['_cartus_manual']=load_manual_settings()
     plan=make_plan(report)
     pages=write_hierarchical(report,output,plan,progress=progress,dimensions=True)
-    from specification import prepend_specification
-    pages+=prepend_specification(report,output,plan)
+    from specification import insert_specification
+    pages+=insert_specification(report,output,plan)
     if template:
         from titleblock import frame_pdf
         frame_pdf(output,template,report,plan.get('cartus_contexts',{}))
