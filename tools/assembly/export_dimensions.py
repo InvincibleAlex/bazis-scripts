@@ -94,7 +94,7 @@ def milling_for(panel,lo):
 def dimension_label(c,x,y,label,secondary_colors):
     layout=getattr(c,'annotation_layout',None)
     if layout:
-        layout.draw(c,x,y,label,centered=True,secondary_colors=secondary_colors)
+        layout.draw(c,x,y,label,centered=True,secondary_colors=secondary_colors,leader=False)
     else:
         c.drawCentredString(x,y,label)
         half=min(3,stringWidth(label,'Body',7)*.375)

@@ -284,7 +284,7 @@ def aligned_dimension(c,a,b,offset,label,color):
     if angle>90:angle-=180
     if angle<-90:angle+=180
     c.translate((a2[0]+b2[0])/2,(a2[1]+b2[1])/2);c.rotate(angle)
-    if getattr(c,'annotation_layout',None):c.annotation_layout.draw(c,0,3,label,centered=True)
+    if getattr(c,'annotation_layout',None):c.annotation_layout.draw(c,0,3,label,centered=True,leader=False)
     else:c.drawCentredString(0,3,label)
     c.restoreState()
 

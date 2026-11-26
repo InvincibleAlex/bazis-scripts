@@ -36,7 +36,7 @@ class AnnotationLayout:
         bottom=y-2 if not secondary_colors else y-max(2,4+(len(secondary_colors)-1)*2.2)
         points=[(a*px+cc*py+e,b*px+d*py+f) for px,py in [(left,bottom),(left+width,bottom),(left,y+c._fontsize+1),(left+width,y+c._fontsize+1)]]
         return (min(p[0] for p in points),min(p[1] for p in points),max(p[0] for p in points),max(p[1] for p in points))
-    def draw(self,c,x,y,text,centered=False,target=None,secondary_colors=()):
+    def draw(self,c,x,y,text,centered=False,target=None,secondary_colors=(),leader=True):
         # Search beyond the initial neighborhood; an annotation is never silently dropped.
         candidates=[(0,0)]
         for radius in range(9,190,9):
@@ -56,7 +56,7 @@ class AnnotationLayout:
                 if selected:break
         if selected is None:raise ValueError('Nu există spațiu pentru toate cotele și reperele acestei vederi: '+str(text))
         xx,yy,box=selected;self.reserve(box);self.placements.append((str(text),box))
-        if target is not None or abs(xx-x)+abs(yy-y)>2:
+        if leader and (target is not None or abs(xx-x)+abs(yy-y)>2):
             tx,ty=target if target is not None else (x,y-2)
             c.saveState();c.setLineWidth(.18);c.line(tx,ty,xx,yy-2);c.restoreState()
         if centered:c.drawCentredString(xx,yy,str(text))
