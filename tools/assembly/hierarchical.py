@@ -4,6 +4,7 @@ import math
 import tempfile
 from io import BytesIO
 from pathlib import Path
+from assembly_fonts import register_body_font
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -201,7 +202,7 @@ def plate_view(p,fittings):
     return transform(normal,lambda v:[v[0],v[2],-v[1]])
 
 def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimensions=False):
-    pdfmetrics.registerFont(TTFont('Body','C:/Windows/Fonts/arial.ttf'))
+    register_body_font()
     views,groups=prepare(report,plan);nodes={p['id']:p for p in report['nodes']}
     selected=[m for m in plan['modules'] if sample_module is None or m['name']==sample_module]
     if not selected:raise ValueError('Corpul cerut nu există în model.')

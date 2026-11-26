@@ -6,6 +6,7 @@ from dimension_sections import cross_section,section_label,draw_detail,draw_sect
 from dimension_annotations import AnnotationLayout
 from dimension_page_layout import PADDING,DIMENSION_STEP,DIMENSION_START,grouped_coordinates,nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions
 from pathlib import Path
+from assembly_fonts import register_body_font
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -462,7 +463,7 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
 
 
 def write_sheets(report,output,progress=None):
-    pdfmetrics.registerFont(TTFont('Body','C:/Windows/Fonts/arial.ttf'))
+    register_body_font()
     panels=report.get('panels',[]);c=canvas.Canvas(str(output),pagesize=(PAGE_W,PAGE_H));c.setTitle('Export Cote')
     total_holes=total_cuts=0
     headers=['Nr.','X','Y','Z local','Ø','Adâncime','Tip']

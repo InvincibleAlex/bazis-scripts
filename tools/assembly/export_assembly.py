@@ -6,6 +6,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from assembly_fonts import register_body_font
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor, Color
 from reportlab.pdfbase import pdfmetrics
@@ -246,7 +247,7 @@ def draw_scene(c,parts,new_id,offset,frame,all_parts,hardware=None,mark_hardware
 def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=None,progress=None,inventory_only=False):
     W,H=842,595
     font=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'/'arial.ttf'
-    pdfmetrics.registerFont(TTFont('Body',str(font)))
+    register_body_font()
     parts={p['id']:p for p in report['panels']}
     hardware=[p for p in report.get('hardware',[]) if not p.get('hidden') and p.get('bounds',{}).get('min') and p.get('bounds',{}).get('max')]
     assign_hardware(hardware,report['panels'])

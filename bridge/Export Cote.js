@@ -159,9 +159,21 @@
    if(axis&&!shaftAxes.every(function(a){return Math.abs(a.reduce(function(s,v,i){return s+v*axis[i];},0))>.995;}))axis=null;
    return {edges:edges,approximate_components:approximate,native_edge_components:nativeComponents,insertion_axis:axis};
   }
-  var cfg=JSON.parse(fs.readFileSync(path.join(os.homedir(),'.bazis-mcp','material-db-reader.json'),'utf8'));
-  var helper=path.join(os.homedir(),'Documents','BazisMCP','tools','assembly','export_dimensions.py');
-  if(!fs.existsSync(helper))throw Error('Lipseste generatorul: '+helper);
+  // The complete package is shared/relocatable; no per-user MCP configuration is required.
+  var packageCandidates=[],environment=get(process,'env')||{};
+  if(environment.BAZIS_EXPORT_COTE_HOME)packageCandidates.push(environment.BAZIS_EXPORT_COTE_HOME);
+  if(typeof __dirname!=='undefined')packageCandidates.push(path.join(__dirname,'Export Cote'));
+  packageCandidates.push(path.join(String.fromCharCode(92,92)+'RG','Bazis','Scripts','Export Cote'));
+  var packageRoot=null,missing=[];
+  var required=['runtime/python/python.exe','tools/assembly/export_dimensions.py','tools/assembly/dimensions_console.py','tools/assembly/dimension_sheets.py','tools/assembly/dimension_page_layout.py','tools/assembly/dimension_sections.py','tools/assembly/dimension_annotations.py','tools/assembly/assembly_fonts.py','tools/assembly/hierarchical.py','tools/assembly/export_assembly.py','tools/assembly/visibility.py','tools/assembly/holes.py','tools/assembly/hardware_labels.py','tools/assembly/inventory_layout.py','tools/assembly/module_repetitions.py','tools/assembly/callouts.py','runtime/python/Lib/site-packages/reportlab/__init__.py','runtime/python/Lib/site-packages/pypdf/__init__.py','runtime/python/Lib/site-packages/numpy/__init__.py','runtime/python/Lib/site-packages/PIL/__init__.py'];
+  for(var pc=0;pc<packageCandidates.length;pc++){
+   var candidate=packageCandidates[pc],absent=required.filter(function(file){return !fs.existsSync(path.join(candidate,file));});
+   if(!absent.length){packageRoot=candidate;break;}
+   missing.push(candidate+': '+absent.join(', '));
+  }
+  if(!packageRoot)throw Error('Pachetul Export Cote lipseste sau este incomplet. Copiati folderul complet Export Cote langa script.\n'+missing.join('\n'));
+  var cfg={python:path.join(packageRoot,'runtime','python','python.exe')};
+  var helper=path.join(packageRoot,'tools','assembly','export_dimensions.py');
   var now=new Date();
   function pad(n){return ('0'+n).slice(-2);}
   var stamp=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+' '+pad(now.getHours())+'-'+pad(now.getMinutes())+'-'+pad(now.getSeconds());
