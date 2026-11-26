@@ -7,6 +7,21 @@ from dimension_sheets import write_sheets,native_bands
 from dimension_page_layout import nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions,grouped_coordinates,DIMENSION_START,DIMENSION_STEP,PADDING
 
 class PageLayout(unittest.TestCase):
+    def test_multi_notch_contour_has_one_chain_rail_and_one_overall(self):
+        from dimension_sheets import CONTOUR,baseline_dimensions
+        from unittest.mock import patch,MagicMock
+        points=[[0,0],[412,0],[412,2104],[0,2104],[0,1750],[206,1750],[206,1732],[0,1732],[0,1390],[206,1390],[206,1372],[0,1372]]
+        sides=nearest_dimension_sides([],points,lambda p:p,412,2104,CONTOUR)
+        self.assertFalse(any(src=='contour' for entries in sides.values() for _,_,src in entries))
+        entries=sides['left'];self.assertGreater(len(entries),3)
+        with patch('dimension_sheets.dimension') as draw:
+            baseline_dimensions(MagicMock(),lambda p:p,entries,1,0,0,'left',412,2104)
+            self.assertEqual(len({call.args[3] for call in draw.call_args_list}),1)
+            self.assertTrue(all(call.kwargs['color']==CONTOUR for call in draw.call_args_list))
+            self.assertEqual(sum(float(call.args[4]) for call in draw.call_args_list),2104)
+        envelope=dimension_envelope(sides,[],[])
+        self.assertEqual(envelope['overall']['left'],DIMENSION_START+DIMENSION_STEP+5)
+
     def test_shared_coordinates_merge_opposite_colors_but_not_chain_segments(self):
         from dimension_page_layout import merge_opposite_coordinates
         from dimension_sheets import THROUGH,FACE,EDGE,baseline_dimensions
@@ -66,7 +81,7 @@ class PageLayout(unittest.TestCase):
         holes=[{'position':[36,275],'color':EDGE}]
         sides=nearest_dimension_sides(holes,points,lambda p:p,1363,350,THROUGH)
         heights=[entry for side in ['left','right'] for entry in sides[side] if entry[2]=='contour' and entry[0]==300]
-        self.assertEqual(len(grouped_coordinates(heights)),1)
+        self.assertEqual(len(heights),0)
         self.assertFalse(any(entry[2]=='contour' and entry[0]==300 for entry in sides['right']))
         self.assertIn((350,THROUGH,'step:300'),sides['left'])
         self.assertIn((1363,THROUGH,'step:1345'),sides['bottom'])

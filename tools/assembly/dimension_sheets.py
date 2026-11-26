@@ -14,6 +14,7 @@ from reportlab.lib.utils import simpleSplit
 from export_dimensions import geometry,holes_for,milling_for,flatten,xy,curve,dimension,dimension_positions,fmt
 
 FACE=HexColor('#0000ff');THROUGH=HexColor('#ff0000');EDGE=HexColor('#ff00ff')
+CONTOUR=HexColor('#000000')
 MILL=HexColor('#b15d12');INK=HexColor('#172b3a');BUBBLE=HexColor('#1668b2')
 PAGE_W,PAGE_H=1191,842
 PAGE_FRAME_INSET=0
@@ -351,15 +352,18 @@ def baseline_dimensions(c,project,entries,axis,left,bottom,side=None,width=0,hei
     datum=[0,height if side=='top' else 0] if axis==0 else [width if side=='right' else 0,0]
     origin=project(datum)
     base=project([width,height])[axis^1] if side in ('top','right') else (bottom if axis==0 else left)
-    for index,group in enumerate(groups):
+    ordinary=[group for group in groups if not any(source.startswith('step:') for _,_,source in group)]
+    chain=[group for group in groups if any(source.startswith('step:') for _,_,source in group)]
+    for index,group in enumerate(ordinary+chain):
         value=sum(v for v,_,_ in group)/len(group);colors=[]
         step=next((float(source.split(':',1)[1]) for _,_,source in group if source.startswith('step:')),None)
         label=board_fmt(value-step) if step is not None else board_fmt(value) if any(source=='contour' for _,_,source in group) else fmt(value)
-        group=sorted(group,key=lambda entry:(0 if entry[1]==THROUGH else 1,0 if entry[2]=='contour' or entry[2].startswith('step:') else 1))
+        group=sorted(group,key=lambda entry:(0 if entry[2]=='contour' or entry[2].startswith('step:') else 1,0 if entry[1]==THROUGH else 1))
         for _,color,_ in group:
             if color not in colors:colors.append(color)
         point=[value,datum[1]] if axis==0 else [datum[0],value]
-        endpoint=project(point);offset=base+sign*(DIMENSION_START+index*DIMENSION_STEP)
+        endpoint=project(point);rail=len(ordinary) if step is not None else index
+        offset=base+sign*(DIMENSION_START+rail*DIMENSION_STEP)
         start=project([step,datum[1]] if axis==0 else [datum[0],step]) if step is not None else origin
         dimension(c,start,endpoint,offset,label,axis==1,color=colors[0],secondary_colors=colors[1:])
 
@@ -420,14 +424,18 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     for h,q,a in sorted(positions,key=lambda item:(-item[1][1],item[1][0])):
         c.setFont('Body',6);c.setFillColor(h['color']);c.setStrokeColor(h['color'])
         c.annotation_layout.draw(c,a[0]+5,a[1]+5,h['tag'],target=a)
-    side_entries=side_entries or nearest_dimension_sides(visible,outer,convert,width,height,THROUGH)
+    side_entries=side_entries or nearest_dimension_sides(visible,outer,convert,width,height,CONTOUR)
     envelope=envelope or dimension_envelope(side_entries,cuts,bands)
     for side,entries in side_entries.items():
         baseline_dimensions(c,project,entries,0 if side in ('top','bottom') else 1,left,bottom,side,width,height)
     for i,loop in enumerate([loop for loop in loops if loop['interior']],1):annotate_loop(c,loop,convert,project,width,height,i)
     draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
-    dimension(c,project([0,0]),project([width,0]),bottom-envelope['overall']['bottom'],board_fmt(width),color=THROUGH)
-    dimension(c,project([0,0]),project([0,height]),left-envelope['overall']['left'],board_fmt(height),True,color=THROUGH)
+    x_side=envelope.get('overall_sides',{}).get('x','bottom')
+    y_side=envelope.get('overall_sides',{}).get('y','left')
+    x_datum=height if x_side=='top' else 0
+    y_datum=width if y_side=='right' else 0
+    dimension(c,project([0,x_datum]),project([width,x_datum]),(top+envelope['overall']['top'] if x_side=='top' else bottom-envelope['overall']['bottom']),board_fmt(width),color=CONTOUR)
+    dimension(c,project([y_datum,0]),project([y_datum,height]),(right+envelope['overall']['right'] if y_side=='right' else left-envelope['overall']['left']),board_fmt(height),True,color=CONTOUR)
     grain=grain_vector(p)
     if grain:
         d=vector(grain);length=min(45,max(14,min(width,height)*scale*.3));nx,ny=-d[1],d[0]
@@ -497,7 +505,7 @@ def write_sheets(report,output,progress=None):
             width,height=hi[0]-lo[0],hi[1]-lo[1]
             if not single and height>width:width,height=height,width
             visible=face_holes(holes,back)
-            side_entries=nearest_dimension_sides(visible,outer,convert,width,height,THROUGH)
+            side_entries=nearest_dimension_sides(visible,outer,convert,width,height,CONTOUR)
             visible_cuts=[cut for cut in cuts if cut.get('face')==('Zmin' if back else 'Zmax') or cut.get('face') not in ('Zmin','Zmax')]
             envelope=dimension_envelope(side_entries,visible_cuts,bands)
             rows=[];colors=[]

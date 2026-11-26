@@ -46,58 +46,45 @@ def merge_opposite_coordinates(sides):
 def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
     result={side:[] for side in ['bottom','top','left','right']}
     contour_points=[convert(q) for q in outer]
-    contour_edges=list(zip(contour_points,contour_points[1:]+contour_points[:1]))
     points=[(convert(h['position']),h['color'],'hole') for h in holes]
     points.extend((q,contour_color,'contour') for q in contour_points)
     for q,color,source in points:
         if .01<q[0]<width-.01:result['top' if q[1]>height/2 else 'bottom'].append((q[0],color,source))
         if .01<q[1]<height-.01:result['right' if q[0]>width/2 else 'left'].append((q[1],color,source))
-    # Shared contour coordinates are described once, even for symmetric sides.
-    for primary,opposite in [('bottom','top'),('left','right')]:
-        values=[v for v,_,source in result[primary] if source=='contour']
-        result[opposite]=[entry for entry in result[opposite] if not (entry[2]=='contour' and any(abs(entry[0]-v)<=.01 for v in values) and not any(source=='hole' and abs(entry[0]-v)<=.01 for v,_,source in result[opposite]))]
-    # Add local step lengths in addition to their positions from the origin.
+    # Contour coordinates form a single straight chain. Keep an origin-based
+    # contour coordinate only when it is also needed by a hardware hole.
+    for side,entries in result.items():
+        hole_values=[value for value,_,source in entries if source=='hole']
+        result[side]=[entry for entry in entries if entry[2]!='contour' or any(abs(entry[0]-value)<=.01 for value in hole_values)]
     for axis,extent,side in [(0,width,'bottom'),(1,height,'left')]:
         values=[]
         for value in sorted(q[axis] for q in contour_points):
             if not values or value-values[-1]>.01:values.append(value)
-        intervals=list(zip(values,values[1:]))
-        # Project each real straight edge once; reuse matches for both chain
-        # detection and local steps instead of scanning every vertex twice.
-        edge_ranges=[(min(a[axis],b[axis]),max(a[axis],b[axis]))
-                     for a,b in contour_edges if abs(a[axis^1]-b[axis^1])<=.01 and abs(a[axis]-b[axis])>.01]
-        native_intervals={(start,end) for start,end in intervals
-                          if any(abs(low-start)<=.01 and abs(high-end)<=.01 for low,high in edge_ranges)}
-        # A symmetric interrupted side is clearest as a complete chain, not
-        # a chain plus redundant cumulative coordinates at each shoulder.
-        if len(intervals)>=3 and abs((intervals[0][1]-intervals[0][0])-(intervals[-1][1]-intervals[-1][0]))<=.01 and all(interval in native_intervals for interval in intervals):
-            # Locate the opening/step from its internal-axis vertices, rather
-            # than using a fixed bottom/left rail for every chain.
-            normal_extent=height if axis==0 else width
-            feature=[q[axis^1] for q in contour_points if .01<q[axis]<extent-.01]
-            if feature:
-                near_low=min(abs(v) for v in feature)
-                near_high=min(abs(normal_extent-v) for v in feature)
-                side=('top' if axis==0 else 'right') if near_high<near_low else ('bottom' if axis==0 else 'left')
-            for current in (('bottom','top') if axis==0 else ('left','right')):
-                result[current]=[entry for entry in result[current] if entry[2]!='contour' or any(source=='hole' and abs(entry[0]-v)<=.01 for v,_,source in result[current])]
-            for start,end in intervals:result[side].append((end,contour_color,'step:'+str(start)))
-            continue
-        for start,end in intervals:
-            if (start,end) in native_intervals and start>.01 and .01<end-start<extent/2:
-                result[side].append((end,contour_color,'step:'+str(start)))
+        if len(values)<3:continue  # A rectangle needs only its overall size.
+        normal_extent=height if axis==0 else width
+        feature=[q[axis^1] for q in contour_points if .01<q[axis]<extent-.01]
+        if feature and min(abs(normal_extent-v) for v in feature)<min(abs(v) for v in feature):
+            side='top' if axis==0 else 'right'
+        for start,end in zip(values,values[1:]):
+            result[side].append((end,contour_color,'step:'+str(start)))
     return merge_opposite_coordinates(result)
 
 
 def dimension_envelope(sides,cuts,bands):
-    extents={side:(DIMENSION_START+DIMENSION_STEP*(len(grouped_coordinates(entries))-1) if entries else 0) for side,entries in sides.items()}
+    extents={}
+    for side,entries in sides.items():
+        rails=len(grouped_coordinates([entry for entry in entries if len(entry)<3 or not entry[2].startswith('step:')]))+int(any(len(entry)>2 and entry[2].startswith('step:') for entry in entries))
+        extents[side]=DIMENSION_START+DIMENSION_STEP*(rails-1) if rails else 0
     if cuts:
         extents['top']=max(extents['top'],23+20*(len(cuts)-1))
         extents['right']=max(extents['right'],25+20*(len(cuts)-1))
     overall={'bottom':extents['bottom']+DIMENSION_STEP+5,'left':extents['left']+DIMENSION_STEP+5}
+    overall_sides={'x':'top' if any(len(e)>2 and e[2].startswith('step:') for e in sides['top']) else 'bottom',
+                   'y':'right' if any(len(e)>2 and e[2].startswith('step:') for e in sides['right']) else 'left'}
+    for side in overall_sides.values():overall[side]=extents[side]+DIMENSION_STEP+5
     extents.update(overall)
     margins={side:max(value+18,45 if bands else 18) for side,value in extents.items()}
-    return {'margins':margins,'overall':overall,'extents':extents}
+    return {'margins':margins,'overall':overall,'extents':extents,'overall_sides':overall_sides}
 
 
 def flow_coordinate_tables(groups,top,bottom,measure,row_height=10):
