@@ -32,7 +32,17 @@ def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
         values=[]
         for value in sorted(q[axis] for q in contour_points):
             if not values or value-values[-1]>.01:values.append(value)
-        for start,end in zip(values,values[1:]):
+        intervals=list(zip(values,values[1:]))
+        def native_edge(start,end):
+            return any(abs(a[axis^1]-b[axis^1])<=.01 and abs(min(a[axis],b[axis])-start)<=.01 and abs(max(a[axis],b[axis])-end)<=.01 for a,b in zip(contour_points,contour_points[1:]+contour_points[:1]))
+        # A symmetric interrupted side is clearest as a complete chain, not
+        # a chain plus redundant cumulative coordinates at each shoulder.
+        if len(intervals)>=3 and abs((intervals[0][1]-intervals[0][0])-(intervals[-1][1]-intervals[-1][0]))<=.01 and all(native_edge(a,b) for a,b in intervals):
+            for current in (('bottom','top') if axis==0 else ('left','right')):
+                result[current]=[entry for entry in result[current] if entry[2]!='contour' or any(source=='hole' and abs(entry[0]-v)<=.01 for v,_,source in result[current])]
+            for start,end in intervals:result[side].append((end,contour_color,'step:'+str(start)))
+            continue
+        for start,end in intervals:
             actual_edge=any(abs(a[axis^1]-b[axis^1])<=.01 and abs(min(a[axis],b[axis])-start)<=.01 and abs(max(a[axis],b[axis])-end)<=.01 for a,b in zip(contour_points,contour_points[1:]+contour_points[:1]))
             if actual_edge and start>.01 and .01<end-start<extent/2:
                 result[side].append((end,contour_color,'step:'+str(start)))

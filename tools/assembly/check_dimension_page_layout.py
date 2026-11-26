@@ -7,6 +7,15 @@ from dimension_sheets import write_sheets,native_bands
 from dimension_page_layout import nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions,grouped_coordinates,DIMENSION_START,DIMENSION_STEP,PADDING
 
 class PageLayout(unittest.TestCase):
+    def test_symmetric_middle_step_uses_chain_without_cumulative_316(self):
+        from dimension_sheets import THROUGH
+        points=[[0,0],[200,0],[200,298],[400,298],[400,316],[200,316],[200,614],[0,614]]
+        sides=nearest_dimension_sides([],points,lambda p:p,400,614,THROUGH)
+        entries=sides['left']+sides['right']
+        self.assertFalse(any(source=='contour' and value==316 for value,_,source in entries))
+        lengths=[value-float(source.split(':')[1]) for value,_,source in entries if source.startswith('step:')]
+        self.assertEqual(lengths,[298,18,298])
+
     def test_shoulders_have_local_lengths_without_duplicate_symmetric_height(self):
         from dimension_sheets import THROUGH,EDGE,baseline_dimensions
         from unittest.mock import patch,MagicMock
