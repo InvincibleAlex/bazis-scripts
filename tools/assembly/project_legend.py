@@ -79,6 +79,17 @@ def write_project_legend(report,output):
         if kind=='hole':
             c.circle(left+9,y,3,stroke=1,fill=0);c.line(left+4,y,left+14,y);c.line(left+9,y-5,left+9,y+5)
         c.line(left+14,y,left+35,y);c.setFont('Body',8);c.drawString(left+43,y-3,text);c.restoreState();y-=23
+    c.saveState();c.setStrokeColorRGB(.55,.55,.55);c.setLineWidth(.4)
+    x=left+3;side=13;lower=y-side/2
+    c.rect(x,lower,side,side,stroke=1,fill=0)
+    for offset in range(-12,14,3):
+        a=max(0,-offset);b=min(side,side-offset)
+        c.line(x+a,lower+a+offset,x+b,lower+b+offset)
+    c.setFillColor(INK);c.setFont('Body',8)
+    text='Decupaj străpuns în placă — realizat prin modificarea conturului'
+    lines=simpleSplit(text,'Body',8,right-left-43)
+    for index,line in enumerate(lines):c.drawString(left+43,y-3-index*11,line)
+    c.restoreState();y-=max(23,len(lines)*11+8)
     y-=17;c.setFont('Body',9);c.drawString(left,y,'Secțiunile frezărilor din proiect');y-=22
     entries=project_sections(report);column_width=(right-left-15)/2;row_height=145
     scale=section_scale(entries,column_width)
