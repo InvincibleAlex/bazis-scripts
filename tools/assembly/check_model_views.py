@@ -41,7 +41,7 @@ class ModelViews(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             output=Path(folder)/'views.pdf';write_model_views(report,output)
             text=PdfReader(output).pages[0].extract_text()
-            for value in ('800','2000','500','Vedere de sus','Vedere din față','Vedere din dreapta'):self.assertIn(value,text)
+            for value in ('800','2000','500','Vedere de sus','Vedere din față','Vedere din dreapta','Vedere din stânga'):self.assertIn(value,text)
             plan={'cartus_contexts':{1:{'corp':'cover'},2:{'_specification':True}},'module_page_ranges':{'m':[3,5]}}
             insert_model_views(report,output,plan)
             self.assertEqual(len(PdfReader(output).pages),2)

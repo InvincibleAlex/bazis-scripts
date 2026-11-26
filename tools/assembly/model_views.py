@@ -76,13 +76,12 @@ def write_model_views(report, output,module_name=None):
     c=canvas.Canvas(str(output),pagesize=size)
     c.setFont('Body',11);c.drawString(left+4*mm,top-6*mm,('Vederi — '+module_name) if module_name else 'Secțiuni model')
     region=(left,bottom,right,top-12*mm)
-    scale,views=view_layout((lo,hi),region,four=bool(module_name))
-    if module_name:
-        rw,rh=right-left,top-12*mm-bottom
-        rotated_scale,rotated_views=view_layout((lo,hi),(0,0,rh,rw),four=True)
-        if rotated_scale>scale:
-            c.translate(right,bottom);c.rotate(90)
-            region=(0,0,rh,rw);scale,views=rotated_scale,rotated_views
+    scale,views=view_layout((lo,hi),region,four=True)
+    rw,rh=right-left,top-12*mm-bottom
+    rotated_scale,rotated_views=view_layout((lo,hi),(0,0,rh,rw),four=True)
+    if rotated_scale>scale:
+        c.translate(right,bottom);c.rotate(90)
+        region=(0,0,rh,rw);scale,views=rotated_scale,rotated_views
     edges=[edge for p in items for edge in p.get('edges',[])]
     if not edges: raise ValueError('Lipsesc muchiile native ale modelului pentru proiecții.')
     from visibility import DepthMask
