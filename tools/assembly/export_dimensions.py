@@ -195,6 +195,8 @@ def main():
     pages=write_hierarchical(report,output,plan,progress=progress,dimensions=True)
     from specification import insert_specification
     pages+=insert_specification(report,output,plan)
+    from model_views import insert_model_views
+    pages+=insert_model_views(report,output,plan)
     if template:
         from titleblock import frame_pdf
         frame_pdf(output,template,report,plan.get('cartus_contexts',{}))
