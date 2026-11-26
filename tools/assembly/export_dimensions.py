@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+from decimal import Decimal,ROUND_HALF_UP
 from pathlib import Path
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -15,12 +16,10 @@ BLUE=HexColor('#1668b2')
 
 def fmt(value):
     if value is None:return '?'
-    number=float(value)
-    # Remove up to two microns of native-coordinate noise near a hundredth mm.
-    # Genuine fractions (200.75, 324.657) remain unchanged.
-    hundredth=round(number,2)
-    if abs(number-hundredth)<=.00200001:number=hundredth
-    return f'{number:.3f}'.rstrip('0').rstrip('.')
+    rounded=Decimal(str(value)).quantize(Decimal('.01'),rounding=ROUND_HALF_UP)
+    if rounded==0:return '0'
+    return format(rounded,'f').rstrip('0').rstrip('.')
+
 
 def xy(p):return [p['x'],p['y']] if isinstance(p,dict) else list(p[:2])
 

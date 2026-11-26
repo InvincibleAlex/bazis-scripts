@@ -1,6 +1,5 @@
 """Two-sided native board sheets; all view transforms are presentation only."""
 import math
-from decimal import Decimal,ROUND_HALF_UP
 from reportlab.lib.units import mm
 from dimension_sections import cross_section,section_label,draw_detail,draw_section_mark,DETAIL_WIDTH,DETAIL_HEIGHT,DETAIL_GAP,SECTIONS_PER_PAGE
 from dimension_annotations import AnnotationLayout
@@ -22,9 +21,7 @@ TABLE_RIGHT_PADDING=10*mm
 
 
 def board_fmt(value):
-    if value is None:return '?'
-    rounded=format(Decimal(str(value)).quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'f')
-    return rounded.rstrip('0').rstrip('.')
+    return fmt(value)
 
 
 def selected_faces(holes,cuts):

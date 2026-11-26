@@ -76,17 +76,20 @@ class Sheets(unittest.TestCase):
             self.assertIn('Găuri — Față',text);self.assertIn('Găuri — Spate',text)
             self.assertNotIn('întoarcere sus–jos',text)
 
-    def test_board_rounding_does_not_round_drilling_values(self):
+    def test_all_dimensions_round_half_up_to_hundredths(self):
         from dimension_sheets import board_fmt,fmt
         self.assertEqual(board_fmt(971.9982617),'972')
         self.assertEqual(board_fmt(200.754),'200.75')
         self.assertEqual(board_fmt(100),'100')
         self.assertEqual(fmt(200.75),'200.75')
+        for value,expected in [(10.0049,'10'),(10.005,'10.01'),(10.015,'10.02'),(200.755,'200.76'),(-.004,'0'),(0,'0'),(100,'100')]:
+            self.assertEqual(fmt(value),expected)
+            self.assertEqual(board_fmt(value),expected)
         self.assertEqual(fmt(199.998),'200')
         self.assertEqual(fmt(140.998),'141')
         self.assertEqual(fmt(141.002),'141')
-        self.assertEqual(fmt(140.997),'140.997')
-        for value,expected in [(695.499,'695.5'),(66.999,'67'),(1323.999,'1324'),(324.657,'324.657'),(200.751,'200.75')]:
+        self.assertEqual(fmt(140.997),'141')
+        for value,expected in [(695.499,'695.5'),(66.999,'67'),(1323.999,'1324'),(324.657,'324.66'),(200.751,'200.75')]:
             self.assertEqual(fmt(value),expected)
     def test_empty_opposite_face_has_no_duplicate_view_or_table(self):
         from dimension_sheets import selected_faces
