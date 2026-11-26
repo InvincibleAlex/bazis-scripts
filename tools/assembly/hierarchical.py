@@ -216,7 +216,7 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
         def header(title,subtitle='',items=None):
             nonlocal page_count,cw,ch
             if progress:progress('Desen: '+title)
-            cw,ch=choose_page(items) if items else (W,H);c.setPageSize((cw,ch))
+            cw,ch=(595,842) if dimensions and page_count==0 else choose_page(items) if items else (W,H);c.setPageSize((cw,ch))
             page_count+=1;c.setFillColor(HexColor('#172b3a'));c.setFont('Body',18);c.drawString(35,ch-43,title[:80]);c.setFont('Body',9);c.drawString(35,ch-65,subtitle[:130])
         def picture(title,group_items,subtitle=''):
             items=[p for _,objects in group_items for p in objects];header(title,subtitle,items)
@@ -225,7 +225,10 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
             from callouts import draw_callouts
             draw_callouts(c,[(name[:50],[p for p in objects if p.get('kind')!='hardware'] or objects) for name,objects in group_items if name],items,point,(35,60,cw-70,ch-150))
             c.showPage()
-        picture('Ansamblu | Vedere izometrică',[('',report['panels']+report.get('hardware',[]))],f'Detaliere montaj: {sample_module}' if sample_module else '')
+        root=next((node for node in report['nodes'] if not node.get('parent')),None)
+        furniture=next((node for node in report['nodes'] if root and node.get('parent')==root['id'] and node.get('name')),root)
+        furniture_name=(furniture.get('name','').split('\r')[0] if furniture else '') or Path(str(report.get('model','Mobilier')).replace('\\','/')).stem
+        picture(furniture_name if dimensions else 'Ansamblu | Vedere izometrică',[('',report['panels']+report.get('hardware',[]))],f'Detaliere montaj: {sample_module}' if sample_module else '')
         packed=[]
         for group in groups:
             members=group['modules'];raw=[p for m in members for pair in [module_items(report,m)] for collection in pair for p in collection]

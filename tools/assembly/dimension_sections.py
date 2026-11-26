@@ -84,10 +84,10 @@ def draw_section_mark(c,cut,convert,project,panel=None,loops=None):
     c.restoreState()
 
 
-def draw_detail(c,cut,x,top):
+def draw_detail(c,cut,x,top,scale=None):
     data=cut['section_detail'];label=cut['section_label'];width=data['width'];depth=data['depth'];thickness=data['thickness']
     left,right=data['left'],data['right'];half=width/2
-    scale=min(118/(right-left),45/thickness)
+    if scale is None:scale=min(118/(right-left),45/thickness)
     ox=x+30-left*scale;oy=top-76
     p=lambda q:(ox+q[0]*scale,oy+q[1]*scale)
     # Normalize the local detail so the machined face and opening always face upward.

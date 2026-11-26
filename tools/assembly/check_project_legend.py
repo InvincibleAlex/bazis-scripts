@@ -25,7 +25,8 @@ class ProjectLegend(unittest.TestCase):
             reader=PdfReader(out);self.assertGreater(count,1)
             text='\n'.join(page.extract_text() for page in reader.pages)
             for i in range(15):self.assertIn(f'Frezare profil {i:02}',text)
-            for label in ('Albastru','Roșu','Fuchsia','Maro','Gri punctat'):self.assertIn(label,text)
+            self.assertNotIn('Gri punctat',text)
+            for label in ('Albastru','Roșu','Fuchsia','Maro'):self.assertIn(label,text)
 
 
 if __name__=='__main__':unittest.main()

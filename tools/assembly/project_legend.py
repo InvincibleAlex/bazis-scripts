@@ -29,10 +29,22 @@ def project_sections(report):
     return result
 
 
-def draw_profile(c,entry,x,top,width):
+def section_scale(entries,width):
+    limits=[]
+    for entry in entries:
+        detail=entry['cut']['section_detail']
+        if detail:limits.extend([118/(detail['right']-detail['left']),45/detail['thickness']])
+        else:
+            points=[p for e in entry['profile'] for p in sampled(e)]
+            if points:
+                limits.extend([(width-42)/max(max(p[0] for p in points)-min(p[0] for p in points),.001),55/max(max(p[1] for p in points)-min(p[1] for p in points),.001)])
+    return min(limits,default=1)
+
+
+def draw_profile(c,entry,x,top,width,scale):
     cut=entry['cut']
     if cut['section_detail']:
-        draw_detail(c,cut,x+(width-174)/2,top)
+        draw_detail(c,cut,x+(width-174)/2,top,scale=scale)
         return
     segments=[sampled(e) for e in entry['profile']]
     points=[p for line in segments for p in line]
@@ -42,7 +54,6 @@ def draw_profile(c,entry,x,top,width):
         c.setFont('Body',7);c.drawCentredString(x+width/2,top-42,'Profil nativ indisponibil')
         return
     lo=[min(p[i] for p in points) for i in range(2)];hi=[max(p[i] for p in points) for i in range(2)]
-    scale=min((width-42)/max(hi[0]-lo[0],.001),55/max(hi[1]-lo[1],.001))
     ox=x+(width-(hi[0]-lo[0])*scale)/2;oy=top-75
     c.setStrokeColor(MILL);c.setLineWidth(.5)
     for line in segments:
@@ -63,15 +74,14 @@ def write_project_legend(report,output):
     for color,text,kind in [(FACE,'Albastru — gaură pe fața plăcii, fără străpungere','hole'),
                             (THROUGH,'Roșu — gaură străpunsă','hole'),
                             (EDGE,'Fuchsia — gaură în cantul plăcii','hole'),
-                            (MILL,'Maro — frezare','line'),
-                            (INK,'Gri punctat — prelucrare pe fața opusă','hidden')]:
-        c.saveState();c.setStrokeColor(color);c.setFillColor(INK);c.setLineWidth(.6)
+                            (MILL,'Maro — frezare','line')]:
+        c.saveState();c.setStrokeColor(color);c.setFillColor(color);c.setLineWidth(.6)
         if kind=='hole':
             c.circle(left+9,y,3,stroke=1,fill=0);c.line(left+4,y,left+14,y);c.line(left+9,y-5,left+9,y+5)
-        if kind=='hidden':c.setStrokeColorRGB(.6,.6,.6);c.setDash(2,2)
         c.line(left+14,y,left+35,y);c.setFont('Body',8);c.drawString(left+43,y-3,text);c.restoreState();y-=23
     y-=17;c.setFont('Body',9);c.drawString(left,y,'Secțiunile frezărilor din proiect');y-=22
     entries=project_sections(report);column_width=(right-left-15)/2;row_height=145
+    scale=section_scale(entries,column_width)
     if not entries:c.setFont('Body',8);c.drawString(left,y,'Proiectul nu conține frezări.')
     for index,entry in enumerate(entries):
         column=index%2
@@ -81,7 +91,7 @@ def write_project_legend(report,output):
             c.showPage();pages+=1;heading(True);y=top-30
         x=left+column*(column_width+15)
         entry['cut']['section_label']=section_label(index)
-        draw_profile(c,entry,x,y,column_width)
+        draw_profile(c,entry,x,y,column_width,scale)
         c.setFillColor(INK);c.setFont('Body',7)
         lines=simpleSplit(entry['name'],'Body',7,column_width-8)
         for j,line in enumerate(lines):c.drawCentredString(x+column_width/2,y-108-j*9,line)
