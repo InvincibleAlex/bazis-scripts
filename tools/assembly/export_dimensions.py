@@ -183,8 +183,19 @@ def main():
     from hierarchical import write_hierarchical
     report=clean_report(report)
     add_hole_edges(report)
+    from titleblock import load_template
+    template=load_template()
+    if template:
+        report['_titleblock']=template
+        from collections import Counter
+        report['_cartus_quantities']=dict(Counter(str(p.get('designation') or p['id']) for p in report['panels']))
+        from titleblock import load_manual_settings
+        report['_cartus_manual']=load_manual_settings()
     plan=make_plan(report)
     pages=write_hierarchical(report,output,plan,progress=progress,dimensions=True)
+    if template:
+        from titleblock import frame_pdf
+        frame_pdf(output,template,report,plan.get('cartus_contexts',{}))
     result={'pages':pages,'panels':len(report['panels']),'holes':sum(len(p.get('holes',[])) for p in report['panels'])}
     output.with_suffix('.cote.json').write_text(json.dumps({'report':report,'dimensions':result,'plan':plan},ensure_ascii=False),encoding='utf-8')
     print(json.dumps({'ok':True,'pdf':str(output),**result},ensure_ascii=False))

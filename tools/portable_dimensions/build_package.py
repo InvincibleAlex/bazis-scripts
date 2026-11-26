@@ -48,6 +48,10 @@ def build(destination,runtime):
     source=Path(__file__).resolve().parents[1]/'assembly';helpers=destination/'tools'/'assembly';helpers.mkdir(parents=True,exist_ok=True)
     files=helper_files(source)
     for file in files:shutil.copy2(file,helpers/file.name)
+    # Keep an offline copy; the live shared editor template remains first choice.
+    editor=Path(r'\\RG\Bazis\Scripts\Editor Cartus')
+    for original,target_name in [('Cartus_A4_Portret_cote.json','cartus_cote.json'),('Parametri_cote.json','cartus_parametri.json')]:
+        if (editor/original).is_file():shutil.copy2(editor/original,helpers/target_name)
     manifest={'schema':1,'python':'runtime/python/python.exe','console':'tools/assembly/dimensions_console.py','renderer':'tools/assembly/export_dimensions.py','dependencies':versions,
               'helpers':{file.name:hashlib.sha256(file.read_bytes()).hexdigest() for file in files}}
     (destination/'runtime.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')

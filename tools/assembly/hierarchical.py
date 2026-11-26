@@ -210,6 +210,7 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
     repetitions=find_repetitions(report,selected,views)
     plan['module_repetitions']=repetitions
     module_ranges={}
+    if dimensions:plan['cartus_contexts']={}
     with tempfile.TemporaryDirectory(prefix='assembly-layout-',dir=output.parent) as temp:
         intro=Path(temp)/'intro.pdf';c=canvas.Canvas(str(intro),pagesize=(W,H));page_count=0;fragments=[];seen_preparation={};cw,ch=W,H
         def header(title,subtitle='',items=None):
@@ -273,10 +274,16 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
                 dimensions_file=Path(temp)/f"dimensions-{module['id']}.pdf"
                 ids={p['id'] for p in panels}
                 native_panels=[p for p in report['panels'] if p['id'] in ids]
-                write_dimensions(dict(report,panels=native_panels),dimensions_file,progress)
+                write_dimensions(dict(report,panels=native_panels,_cartus_corp=module['name']),dimensions_file,progress)
+                native_start=assembled_pages+len(PdfReader(preparation_file).pages)+len(PdfReader(body).pages)+1
+                if report.get('_titleblock'):
+                    from titleblock import bindings
+                    for index,panel in enumerate(native_panels):
+                        plan['cartus_contexts'][native_start+index]=bindings(dict(report,_cartus_corp=module['name']),panel)
                 fragments.append(dimensions_file)
                 assembled_pages+=sum(len(PdfReader(f).pages) for f in [preparation_file,body,dimensions_file])
                 module_ranges[module['id']]=(module_start,assembled_pages)
+                for number in range(module_start,assembled_pages+1):plan['cartus_contexts'].setdefault(number,{'corp':module['name']})
                 continue
             def prepare_step(target,active_module,step_number,added,all_panels,all_fittings,page_header):
                 for instances in preparation_batches(added):
@@ -315,6 +322,7 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
         total=len(writer.pages)
         for i,page in enumerate(writer.pages,1):
             if progress:progress(f'Finalizare pagina {i} / {total}')
+            if dimensions and report.get('_titleblock'):continue
             pw,ph=float(page.mediabox.width),float(page.mediabox.height)
             buf=BytesIO();overlay=canvas.Canvas(buf,pagesize=(pw,ph));overlay.setFillColorRGB(1,1,1);overlay.rect(pw-90,14,75,25,fill=1,stroke=0)
             overlay.setFillColorRGB(.4,.4,.4);overlay.setFont('Body',9);overlay.drawRightString(pw-35,24,f'{i} / {total}');overlay.save();buf.seek(0)
