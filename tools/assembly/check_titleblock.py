@@ -19,6 +19,14 @@ def template():
 
 
 class TitleBlock(unittest.TestCase):
+    def test_quantity_parameter_with_and_without_diacritics(self):
+        from titleblock import substitute_parameters
+        p=example();p['designation']='00.01'
+        values=bindings({'_cartus_quantities':{'00.01':5}},p)
+        self.assertEqual(substitute_parameters('Bucăți: {bucăți} / {bucati}',values),'Bucăți: 5 / 5')
+        self.assertEqual(substitute_parameters('{câmp}',{'câmp':'custom','camp':'other'}),'custom')
+        self.assertEqual(substitute_parameters('Bucăți: {bucăți}',bindings({})),'Bucăți: ')
+
     def test_external_logo_is_reloaded_from_template_folder(self):
         import json,base64
         with tempfile.TemporaryDirectory() as temp:

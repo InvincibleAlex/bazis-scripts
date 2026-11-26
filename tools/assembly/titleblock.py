@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import re
+import unicodedata
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth,registerFont,getRegisteredFontNames
@@ -86,6 +87,15 @@ def wrap(text,width,font,size):
     return lines
 
 
+def substitute_parameters(text,values):
+    """Accept Romanian diacritics while preserving exact custom parameter keys."""
+    def replace(match):
+        key=match[1]
+        canonical=''.join(c for c in unicodedata.normalize('NFD',key) if not unicodedata.combining(c))
+        return str(values.get(key,values.get(canonical,'')))
+    return re.sub(r'\{([^\W\d]\w*)\}',replace,text)
+
+
 def layout(template,values):
     register_body_font()
     if 'BodyBold' not in getRegisteredFontNames():
@@ -102,7 +112,7 @@ def layout(template,values):
     for r,row in enumerate(template['rows']):
         cells=[]
         for original in row['cells']:
-            cell=dict(original);cell['text']=re.sub(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',lambda match:str(values.get(match[1],'')),cell['text'])
+            cell=dict(original);cell['text']=substitute_parameters(cell['text'],values)
             if cell['col']<0 or cell['colSpan']<1 or cell['rowSpan']<1 or cell['col']+cell['colSpan']>len(columns) or r+cell['rowSpan']>len(template['rows']):raise ValueError('Celulă în afara grilei cartușului.')
             for y in range(r,r+cell['rowSpan']):
                 for x in range(cell['col'],cell['col']+cell['colSpan']):
