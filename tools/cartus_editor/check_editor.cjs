@@ -13,3 +13,31 @@ const invalid=T.clone(original);invalid.page.margins.left=205;assert.throws(()=>
 const duplicate=T.clone(original);duplicate.parameters.push(duplicate.parameters[0]);assert.throws(()=>T.validate(duplicate));
 const roundtrip=T.validate(JSON.parse(JSON.stringify(long)));assert.deepEqual(roundtrip,long);
 console.log('PASS: margins in mm, anchored dynamic width, readable wrapping, schema round-trip and invalid-template guards');
+
+function invariant(state){
+ const v=T.validate(state),g=T.grid(v);assert(g.every(row=>row.every(Boolean)));
+ const m=T.layout(v,measure),cells=m.rows.flatMap(row=>row.cells);
+ for(let i=0;i<cells.length;i++)for(let j=i+1;j<cells.length;j++){
+  const a=cells[i],b=cells[j];assert(a.x+a.width<=b.x+1e-7||b.x+b.width<=a.x+1e-7||a.y+a.height<=b.y+1e-7||b.y+b.height<=a.y+1e-7,'Cells overlap');
+ }
+ for(const cell of cells)assert(cell.height+1e-8>=cell.needed);
+ return m;
+}
+let spans=T.logoPreset(T.defaults());const logoModel=invariant(spans);
+assert.equal(logoModel.rows[0].cells[0].height,logoModel.rows.reduce((n,r)=>n+r.height,0));
+assert.equal(logoModel.rows[1].cells[0].x,logoModel.rows[0].cells[0].x+logoModel.rows[0].cells[0].width);
+assert.equal(T.grid(spans)[2][0].row,0);
+T.unmerge(spans,0,0);invariant(spans);assert.equal(spans.rows[1].cells[0].col,0);
+T.merge(spans,0,0,1,3);invariant(spans);assert.equal(T.grid(spans)[2][0].cell.rowSpan,3);
+T.split(spans,0,0,'vertical');invariant(spans);
+T.split(spans,0,0,'horizontal');invariant(spans);
+T.insertRow(spans,1);invariant(spans);T.removeRow(spans,1);invariant(spans);
+T.insertColumn(spans,1);invariant(spans);T.removeColumn(spans,1);invariant(spans);
+let single=T.logoPreset(T.defaults());T.removeRow(single,0);invariant(single);assert.equal(single.rows[0].cells[0].rowSpan,2);
+let partial=T.logoPreset(T.defaults());assert.throws(()=>T.merge(partial,0,0,2,3),/taie/);
+let longSpan=T.logoPreset(T.defaults());longSpan.rows[0].cells[0].logo=false;longSpan.rows[0].cells[0].text='Text foarte lung '.repeat(60);invariant(longSpan);
+const legacy=JSON.parse(require('fs').readFileSync(require('path').join(__dirname,'cartus-initial.json'),'utf8'));
+const migrated=T.validate(legacy);assert.equal(migrated.schema,2);invariant(migrated);
+assert.deepEqual(T.validate(JSON.parse(JSON.stringify(spans))),spans);
+const overlap=T.logoPreset(T.defaults());overlap.rows[1].cells.push({col:0,colSpan:1,rowSpan:1,text:'',font:2,align:'left'});assert.throws(()=>T.validate(overlap),/suprapun/);
+console.log('PASS: 3-row logo, grid migration, merging, splitting, row/column insertion and removal, long-text height and no overlaps');

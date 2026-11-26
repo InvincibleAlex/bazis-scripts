@@ -1,0 +1,134 @@
+{
+  "schema": 2,
+  "name": "Cartuș A4",
+  "page": {
+    "width": 210,
+    "height": 297,
+    "margins": {
+      "left": 10,
+      "right": 10,
+      "top": 10,
+      "bottom": 10
+    }
+  },
+  "block": {
+    "width": 165,
+    "maxWidth": 190,
+    "dynamic": true,
+    "gap": 10,
+    "padding": 1,
+    "stroke": 0.2
+  },
+  "logo": "",
+  "parameters": [
+    {
+      "name": "proiect",
+      "value": "Proiect mobilier"
+    },
+    {
+      "name": "client",
+      "value": "Client"
+    },
+    {
+      "name": "placa",
+      "value": "Placa 01"
+    },
+    {
+      "name": "material",
+      "value": "PAL Kronospan"
+    },
+    {
+      "name": "dimensiuni",
+      "value": "1327 × 430 × 18 mm"
+    },
+    {
+      "name": "pagina",
+      "value": "1 / 24"
+    },
+    {
+      "name": "data",
+      "value": "26.11.2026"
+    }
+  ],
+  "rows": [
+    {
+      "height": 7,
+      "cells": [
+        {
+          "col": 0,
+          "colSpan": 1,
+          "rowSpan": 3,
+          "text": "LOGO",
+          "font": 2.2,
+          "align": "center",
+          "logo": true
+        },
+        {
+          "col": 1,
+          "colSpan": 3,
+          "rowSpan": 1,
+          "text": "Proiect: {proiect}",
+          "font": 2.2,
+          "align": "left",
+          "bold": true
+        }
+      ]
+    },
+    {
+      "height": 7,
+      "cells": [
+        {
+          "col": 1,
+          "colSpan": 1,
+          "rowSpan": 1,
+          "text": "{placa}",
+          "font": 2.2,
+          "align": "left"
+        },
+        {
+          "col": 2,
+          "colSpan": 1,
+          "rowSpan": 1,
+          "text": "{material}",
+          "font": 2.2,
+          "align": "left"
+        },
+        {
+          "col": 3,
+          "colSpan": 1,
+          "rowSpan": 1,
+          "text": "{dimensiuni}",
+          "font": 2.2,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "height": 7,
+      "cells": [
+        {
+          "col": 1,
+          "colSpan": 2,
+          "rowSpan": 1,
+          "text": "Client: {client}",
+          "font": 2.2,
+          "align": "left"
+        },
+        {
+          "col": 3,
+          "colSpan": 1,
+          "rowSpan": 1,
+          "text": "Pagina: {pagina}",
+          "font": 2.2,
+          "align": "right"
+        }
+      ]
+    }
+  ],
+  "columns": [
+    25,
+    60,
+    40,
+    35
+  ]
+}

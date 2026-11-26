@@ -4,17 +4,28 @@ Deschide Editor cartus.html in Edge, Chrome sau Firefox. Nu necesita instalare s
 
 1. Scrie marginile foii in mm: stanga, dreapta, sus, jos.
 2. Click pe o celula din cartus pentru a-i edita continutul si dimensiunile.
-3. Adauga, sterge sau muta randuri si celule cu butoanele din stanga.
+3. Foloseste Uneste la dreapta / Uneste in jos pentru celule mai mari.
+   Randuri ocupate / Coloane ocupate permit alegerea directa a extinderii.
+   Separa celulele revine la grila; Imparte creeaza doua celule.
+   Adauga sau sterge randuri si coloane cu butoanele din stanga.
 4. Parametrii sunt definiti de tine; scrie {nume_parametru} in continutul celulei.
    Valorile de proba sunt doar pentru previzualizare. Legaturile cu datele BAZIS
    se stabilesc ulterior, la integrarea cu exportatorul.
 5. Salveaza sablon descarca un fisier cartus.json. Deschide sablon il incarca.
    Pentru alt calculator, copiaza fisierul JSON. Logo-ul este inclus in acesta.
 
-Cartusul ramane ancorat in coltul dreapta jos al chenarului. Latimea relativa
-stabileste proportia fiecarei celule in rand. Cu extensia dinamica activa,
+Cartusul ramane ancorat in coltul dreapta jos al chenarului. Latimea unei celule
+se introduce in mm; coloanele comune raman aliniate pe toate randurile.
+Cu extensia dinamica activa,
 cartusul creste spre stanga pana la limita aleasa, apoi textul trece pe rand nou.
 Inaltimea randului este minima; textul mai lung poate mari automat randul.
+
+Model: logo pe 3 randuri pregateste o celula inalta pentru imagine in stanga
+si campuri editabile in dreapta. Poti folosi si cartus-logo-3-randuri.json.
+Alege Mareste cartusul pentru editare de aproape. Inapoi / Refa recupereaza
+modificarile, inclusiv unirile si impartirile. Textele celulelor unite se pastreaza.
+Sabloanele JSON vechi se convertesc automat la noua grila cand sunt deschise.
+Salvarea nu completeaza automat fisierele JSON deja descarcate: salveaza din nou.
 
 Editorul salveaza si o ciorna locala in browser, cand acesta permite.
 Foloseste Salveaza sablon pentru a pastra si transfera sigur configuratia.
