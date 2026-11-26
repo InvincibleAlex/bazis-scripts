@@ -282,9 +282,16 @@
         // Inlocuieste numai caracterele interzise in numele de fisier Windows.
         exportName = exportName.replace(/[<>:"\/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '') || 'Placi';
         var base = path.join(folder, exportName);
-        // Preserve previous exports. First export has exactly the BLN basename.
-        if (fs.existsSync(base + '.csv') || fs.existsSync(base + '.json'))
+        // Successful runs remove diagnostics, so check the Excel outputs too.
+        function exportBaseExists(candidate) {
+            if (fs.existsSync(candidate+'.csv') || fs.existsSync(candidate+'.json')) return true;
+            return ['Cubis','Komodo','Holver'].some(function(kind){return fs.existsSync(candidate+' '+kind+'.xlsx');});
+        }
+        if (exportBaseExists(base)) {
             base = path.join(folder, exportName + '_' + stamp + '_' + process.pid);
+            var suffix=1, uniqueBase=base;
+            while(exportBaseExists(base))base=uniqueBase+'_'+suffix++;
+        }
         // Citeste numai valori proprii simple; nu apeleaza getteri sau metode native necunoscute.
         var context = {cwd:process.cwd(), campuri:{}};
         function inspectContext(label, target) {
@@ -365,6 +372,26 @@
                 exportStatus(kind+' EROARE: '+detail.slice(0,900));
             }
         });
+        // Only this run's diagnostics are removed, after all three verified exports.
+        var diagnosticMessage='CSV si raport JSON pastrate pentru depanare:\n'+base;
+        if(cubisSucceeded) {
+            var diagnosticFiles=[base+'.json',base+'.csv'], diagnosticCopies=[];
+            try {
+                diagnosticCopies=diagnosticFiles.map(function(file){return fs.readFileSync(file);});
+                diagnosticFiles.forEach(function(file){fs.unlinkSync(file);});
+                diagnosticMessage='';
+                exportStatus('Toate tabelele sunt verificate. JSON si CSV eliminate.');
+            } catch(cleanupError) {
+                // Restore an already removed file if the other file was locked.
+                diagnosticFiles.forEach(function(file,index){
+                    if(diagnosticCopies[index] && !fs.existsSync(file)) {
+                        try{fs.writeFileSync(file,diagnosticCopies[index],{flag:'wx'});}catch(restoreError){exportStatus('Restaurare diagnostic nereusita: '+file);}
+                    }
+                });
+                diagnosticMessage='Tabelele au reusit, dar curatarea JSON/CSV nu s-a incheiat. Verificati fisierele:\n'+base;
+                exportStatus('Curatare diagnostic nereusita: '+String(cleanupError.message||cleanupError));
+            }
+        }
         var folderOpenError = '';
         try {
             var explorer = path.join(process.env.SystemRoot || 'C:\\Windows', 'explorer.exe');
@@ -376,7 +403,7 @@
         exportStatus('Folder rezultate: '+folder);
         fs.writeFileSync(exportState,cubisSucceeded?'done':'error','utf8');
         alert((cubisSucceeded ? 'EXPORT CUBIS + KOMODO + HOLVER REUSIT\n\n' : 'EXPORT CU PROBLEME\n\n')+
-            cubisMessage+'\n\nCSV si raport JSON salvate:\n'+base+
+            cubisMessage+(diagnosticMessage?'\n\n'+diagnosticMessage:'')+
             (rows.length ? '' : '\nNu s-au gasit placi cu dimensiuni accesibile in acest context.')+folderOpenError);
     } catch (e) {
         try{exportStatus('EXPORT OPRIT: '+String(e&&e.message||e));if(exportState)fs.writeFileSync(exportState,'error','utf8');}catch(ignore){}
