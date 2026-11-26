@@ -24,6 +24,7 @@ class TitleBlock(unittest.TestCase):
         p=example();p['designation']='00.01'
         values=bindings({'_cartus_quantities':{'00.01':5}},p)
         self.assertEqual(substitute_parameters('Bucăți: {bucăți} / {bucati}',values),'Bucăți: 5 / 5')
+        self.assertEqual(substitute_parameters('{bucati:}',values),'5')
         self.assertEqual(substitute_parameters('{câmp}',{'câmp':'custom','camp':'other'}),'custom')
         self.assertEqual(substitute_parameters('Bucăți: {bucăți}',bindings({})),'Bucăți: ')
 

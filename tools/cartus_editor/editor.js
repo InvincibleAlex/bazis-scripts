@@ -3,14 +3,17 @@ const TitleBlock = (() => {
   const clone = value => JSON.parse(JSON.stringify(value));
   const legacyDefaults = () => ({schema:1,name:'Cartuș A4',page:{width:210,height:297,margins:{left:10,right:10,top:10,bottom:10}},
     block:{width:165,maxWidth:190,dynamic:true,gap:10,padding:1,stroke:.2},logo:'',
-    parameters:[{name:'proiect',value:'Proiect mobilier'},{name:'client',value:'Client'},{name:'placa',value:'Placa 01'},{name:'material',value:'PAL Kronospan'},{name:'dimensiuni',value:'1327 × 430 × 18 mm'},{name:'pagina',value:'1 / 24'},{name:'data',value:new Date().toLocaleDateString('ro-RO')}],
+    parameters:[{name:'proiect',value:'Proiect mobilier'},{name:'client',value:'Client'},{name:'placa',value:'Placa 01'},{name:'bucati',value:'1'},{name:'material',value:'PAL Kronospan'},{name:'dimensiuni',value:'1327 × 430 × 18 mm'},{name:'pagina',value:'1 / 24'},{name:'data',value:new Date().toLocaleDateString('ro-RO')}],
     rows:[{height:5,cells:[{text:'Proiect: {proiect}',weight:2,font:2.2,align:'left',bold:true},{text:'Client: {client}',weight:2,font:2.2,align:'left'}]},
       {height:5,cells:[{text:'{placa}',weight:1.3,font:2.2,align:'left'},{text:'{material}',weight:2.2,font:2.2,align:'left'},{text:'{dimensiuni}',weight:1.5,font:2.2,align:'center'}]},
       {height:5,cells:[{text:'Data: {data}',weight:1,font:2.2,align:'left'},{text:'Pagina: {pagina}',weight:1,font:2.2,align:'right'}]}]});
 
   const blank=(col,colSpan=1,rowSpan=1)=>({col,colSpan,rowSpan,text:'',font:2.2,align:'left'});
   function migrate(value){
-    const v=clone(value);if(v.schema!==1)return v;
+    const v=clone(value);
+    for(const row of v.rows||[])for(const cell of row.cells||[])cell.text=cell.text.replace(/\{\s*buc(?:ati|\u0103\u021bi)\s*:?\s*\}/gu,'{bucati}');
+    if(Array.isArray(v.parameters)&&!v.parameters.some(p=>p.name==='bucati'))v.parameters.push({name:'bucati',value:'1'});
+    if(v.schema!==1)return v;
     const bounds=[0,1];
     for(const row of v.rows){let x=0,total=row.cells.reduce((n,c)=>n+c.weight,0);for(const c of row.cells){x+=c.weight/total;if(!bounds.some(b=>Math.abs(b-x)<1e-8))bounds.push(x);}}
     bounds.sort((a,b)=>a-b);v.columns=bounds.slice(1).map((x,i)=>x-bounds[i]);

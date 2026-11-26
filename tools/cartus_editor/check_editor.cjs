@@ -54,3 +54,5 @@ assert.equal(media.width,imageCell.width);assert(media.height>0);assert(media.he
 assert(media.y+media.height<=imageCell.y+imageCell.height-imageCell.lines.length*imageCell.font*1.25);
 const combinedSvg=T.svg(imageModel,null);assert(combinedSvg.includes('<image'));assert(combinedSvg.includes('Firma mea'));assert(combinedSvg.includes('Client'));
 console.log('PASS: logo uses full cell with proportional fit; optional caption has separate non-overlapping space');
+
+const quantity=T.defaults();quantity.rows[0].cells[0].text='Bucati: {bucati:}';assert.equal(T.validate(quantity).rows[0].cells[0].text,'Bucati: {bucati}');assert(T.defaults().parameters.some(p=>p.name==='bucati'));

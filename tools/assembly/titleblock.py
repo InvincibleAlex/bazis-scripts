@@ -93,7 +93,7 @@ def substitute_parameters(text,values):
         key=match[1]
         canonical=''.join(c for c in unicodedata.normalize('NFD',key) if not unicodedata.combining(c))
         return str(values.get(key,values.get(canonical,'')))
-    return re.sub(r'\{([^\W\d]\w*)\}',replace,text)
+    return re.sub(r'\{\s*([^\W\d]\w*)\s*:?\s*\}',replace,text)
 
 
 def layout(template,values):
