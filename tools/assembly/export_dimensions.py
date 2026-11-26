@@ -197,6 +197,8 @@ def main():
     pages+=insert_specification(report,output,plan)
     from model_views import insert_model_views
     pages+=insert_model_views(report,output,plan)
+    from project_legend import insert_project_legend
+    pages+=insert_project_legend(report,output,plan)
     if template:
         from titleblock import frame_pdf
         frame_pdf(output,template,report,plan.get('cartus_contexts',{}))
