@@ -41,3 +41,16 @@ const migrated=T.validate(legacy);assert.equal(migrated.schema,2);invariant(migr
 assert.deepEqual(T.validate(JSON.parse(JSON.stringify(spans))),spans);
 const overlap=T.logoPreset(T.defaults());overlap.rows[1].cells.push({col:0,colSpan:1,rowSpan:1,text:'',font:2,align:'left'});assert.throws(()=>T.validate(overlap),/suprapun/);
 console.log('PASS: 3-row logo, grid migration, merging, splitting, row/column insertion and removal, long-text height and no overlaps');
+
+const imageOnly=T.logoPreset(T.defaults());
+imageOnly.logo='data:image/png;base64,iVBORw0KGgo=';
+let imageModel=T.layout(imageOnly,measure),imageCell=imageModel.rows[0].cells[0];
+assert.deepEqual(T.mediaBox(imageCell,imageOnly.block.padding),{x:imageCell.x,y:imageCell.y,width:imageCell.width,height:imageCell.height});
+assert(T.svg(imageModel,null).includes('preserveAspectRatio="xMidYMid meet"'));
+imageOnly.rows[0].cells[0].text='Firma mea\n{client}';
+imageModel=invariant(imageOnly);imageCell=imageModel.rows[0].cells[0];
+const media=T.mediaBox(imageCell,imageOnly.block.padding);
+assert.equal(media.width,imageCell.width);assert(media.height>0);assert(media.height<imageCell.height);
+assert(media.y+media.height<=imageCell.y+imageCell.height-imageCell.lines.length*imageCell.font*1.25);
+const combinedSvg=T.svg(imageModel,null);assert(combinedSvg.includes('<image'));assert(combinedSvg.includes('Firma mea'));assert(combinedSvg.includes('Client'));
+console.log('PASS: logo uses full cell with proportional fit; optional caption has separate non-overlapping space');

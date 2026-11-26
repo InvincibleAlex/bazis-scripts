@@ -72,7 +72,7 @@ const TitleBlock = (() => {
   }
   function logoPreset(base){
     const v=clone(base);v.columns=[25,60,40,35];v.rows=[
-      {height:7,cells:[{...blank(0,1,3),logo:true,text:'LOGO',align:'center'},{...blank(1,3),text:'Proiect: {proiect}',bold:true}]},
+      {height:7,cells:[{...blank(0,1,3),logo:true,text:'',align:'center'},{...blank(1,3),text:'Proiect: {proiect}',bold:true}]},
       {height:7,cells:[{...blank(1),text:'{placa}'},{...blank(2),text:'{material}'},{...blank(3),text:'{dimensiuni}'}]},
       {height:7,cells:[{...blank(1,2),text:'Client: {client}'},{...blank(3),text:'Pagina: {pagina}',align:'right'}]}];return v;
   }
@@ -113,7 +113,7 @@ const TitleBlock = (() => {
     const width=Math.min(available,b.dynamic?b.maxWidth:b.width,desired),left=p.width-m.right-width;
     const xs=[left];for(const col of s.columns)xs.push(xs[xs.length-1]+width*col/total);
     const heights=prepared.map(row=>row.height);
-    const rows=prepared.map((row,r)=>({...row,cells:row.cells.map(cell=>{const w=xs[cell.col+cell.colSpan]-xs[cell.col],inner=w-2*b.padding;if(inner<1)throw Error('Celulă prea îngustă. Mărește lățimea sau redu spațiul interior.');const lines=cell.logo?[]:wrap(cell.resolved,inner,t=>measure(t,cell.font,cell.bold));return {...cell,x:xs[cell.col],width:w,lines,needed:lines.length*cell.font*1.25+2*b.padding};})}));
+    const rows=prepared.map((row,r)=>({...row,cells:row.cells.map(cell=>{const w=xs[cell.col+cell.colSpan]-xs[cell.col],inner=w-2*b.padding;if(inner<1)throw Error('Celulă prea îngustă. Mărește lățimea sau redu spațiul interior.');const lines=cell.resolved.trim()?wrap(cell.resolved,inner,t=>measure(t,cell.font,cell.bold)):[];const caption=lines.length*cell.font*1.25+2*b.padding;return {...cell,x:xs[cell.col],width:w,lines,needed:cell.logo?(lines.length?caption+cell.font*2:0):caption};})}));
     for(let r=0;r<rows.length;r++)for(const cell of rows[r].cells)if(cell.rowSpan===1)heights[r]=Math.max(heights[r],cell.needed);
     for(let r=0;r<rows.length;r++)for(const cell of rows[r].cells)if(cell.rowSpan>1){const existing=heights.slice(r,r+cell.rowSpan).reduce((n,x)=>n+x,0);if(cell.needed>existing)heights[r+cell.rowSpan-1]+=cell.needed-existing;}
     const height=heights.reduce((n,h)=>n+h,0),top=p.height-m.bottom-height;
@@ -122,17 +122,22 @@ const TitleBlock = (() => {
     return {config:s,width,height,left,top,rows,drawing:{x:m.left,y:m.top,width:available,height:top-b.gap-m.top}};
   }
 
+  function mediaBox(cell,padding){
+    const caption=cell.lines.length?cell.lines.length*cell.font*1.25+2*padding:0;
+    return {x:cell.x,y:cell.y,width:cell.width,height:Math.max(0,cell.height-caption)};
+  }
   function svg(model,selected,options={}){
     const s=model.config,p=s.page,m=p.margins,b=s.block;let out=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${p.width} ${p.height}" width="${p.width}mm" height="${p.height}mm" font-family="Arial,sans-serif"><rect width="${p.width}" height="${p.height}" fill="white"/><rect x="${m.left}" y="${m.top}" width="${p.width-m.left-m.right}" height="${p.height-m.top-m.bottom}" fill="none" stroke="black" stroke-width="${b.stroke}"/>`;
     if(options.guides){const d=model.drawing;out+=`<g class="guide"><rect x="${d.x+1}" y="${d.y+1}" width="${Math.max(0,d.width-2)}" height="${Math.max(0,d.height-2)}" fill="none" stroke="#c3d8dd" stroke-width=".15" stroke-dasharray="1.5 1.5"/><text x="${d.x+d.width/2}" y="${d.y+d.height/2}" text-anchor="middle" font-size="2.5" fill="#a4b8bf">Zona pentru desen</text></g>`;}
     model.rows.forEach((row,ri)=>row.cells.forEach((cell,ci)=>{const id=`r${ri}c${ci}`;out+=`<g data-row="${ri}" data-cell="${ci}"><rect class="cell${selected&&selected[0]===ri&&selected[1]===ci?' selected':''}" x="${cell.x}" y="${cell.y}" width="${cell.width}" height="${cell.height}" fill="white" stroke="black" stroke-width="${b.stroke}"/>`;
-      if(cell.logo&&s.logo)out+=`<image href="${s.logo}" x="${cell.x+b.padding}" y="${cell.y+b.padding}" width="${cell.width-2*b.padding}" height="${cell.height-2*b.padding}" preserveAspectRatio="xMidYMid meet" pointer-events="none"/>`;
-      else if(cell.logo)out+=`<text pointer-events="none" x="${cell.x+cell.width/2}" y="${cell.y+cell.height/2}" text-anchor="middle" font-size="2.5" fill="#84959c">LOGO</text>`;
-      else {const x=cell.align==='center'?cell.x+cell.width/2:cell.align==='right'?cell.x+cell.width-b.padding:cell.x+b.padding,anchor=cell.align==='center'?'middle':cell.align==='right'?'end':'start',lineHeight=cell.font*1.25,first=cell.y+(cell.height-cell.lines.length*lineHeight)/2+cell.font;
+      const media=mediaBox(cell,b.padding);
+      if(cell.logo&&s.logo)out+=`<image href="${s.logo}" x="${media.x}" y="${media.y}" width="${media.width}" height="${media.height}" preserveAspectRatio="xMidYMid meet" pointer-events="none"/>`;
+      else if(cell.logo)out+=`<text pointer-events="none" x="${media.x+media.width/2}" y="${media.y+media.height/2}" text-anchor="middle" font-size="2.5" fill="#84959c">LOGO</text>`;
+      if(cell.lines.length){const x=cell.align==='center'?cell.x+cell.width/2:cell.align==='right'?cell.x+cell.width-b.padding:cell.x+b.padding,anchor=cell.align==='center'?'middle':cell.align==='right'?'end':'start',lineHeight=cell.font*1.25,first=cell.logo?cell.y+cell.height-b.padding-cell.lines.length*lineHeight+cell.font:cell.y+(cell.height-cell.lines.length*lineHeight)/2+cell.font;
         out+=`<text pointer-events="none" x="${x}" text-anchor="${anchor}" font-size="${cell.font}" font-weight="${cell.bold?'bold':'normal'}">${cell.lines.map((line,i)=>`<tspan x="${x}" y="${first+i*lineHeight}">${escape(line)}</tspan>`).join('')}</text>`;}
       out+='</g>';}));return out+'</svg>';
   }
-  return {defaults,validate,layout,svg,clone,migrate,grid,merge,unmerge,split,insertRow,insertColumn,removeRow,removeColumn,logoPreset};
+  return {defaults,validate,layout,svg,clone,migrate,grid,merge,unmerge,split,insertRow,insertColumn,removeRow,removeColumn,logoPreset,mediaBox};
 })();
 if(typeof module!=='undefined')module.exports=TitleBlock;
 if(typeof document!=='undefined'){
