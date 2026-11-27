@@ -1,5 +1,5 @@
 // Test read-only pentru BAZIS 2022 / Node 8. Nu necesita MCP.
-// Contur local + cote Cubis: minus grosimea BAZIS a cantului pe fiecare latura cantuita, pentru dreptunghiuri.
+// Contur local + cote Cubis: minus adaosul Cubis (2 -> 1.5 mm, 0.8 -> 0.3 mm, restul neschimbat) pe fiecare latura cantuita, pentru dreptunghiuri.
 (function () {
     'use strict';
     var exportLog=null,exportState=null;
@@ -110,6 +110,13 @@
             }
             return out;
         }
+        // Cubis cutting allowance differs from the physical edging thickness.
+        // Keep native thicknesses intact for material matching and other suppliers.
+        function cubisEdgeDeduction(thickness) {
+            if(Math.abs(thickness-2)<0.000001)return 1.5;
+            if(Math.abs(thickness-0.8)<0.000001)return 0.3;
+            return thickness;
+        }
         function cubisDimensions(panel,w,h,edges) {
             var issues=[], used={}, c=get(panel,'Contour'), elements=get(c,'Objects');
             var lo=get(c,'Min'), hi=get(c,'Max'), sides={};
@@ -136,7 +143,7 @@
                     if(e.sub_taiere===true) {
                         if(typeof e.grosime_mm!=='number'||!isFinite(e.grosime_mm)||e.grosime_mm<0)
                             warnings.push('grosime cant indisponibila');
-                        else deduction[side]=Math.max(deduction[side]||0,e.grosime_mm);
+                        else deduction[side]=Math.max(deduction[side]||0,cubisEdgeDeduction(e.grosime_mm));
                     } else if(e.sub_taiere!==false)warnings.push('sub-taiere necunoscuta');
                 });
                 var bx=(deduction.X_min||0)+(deduction.X_max||0),
@@ -153,14 +160,14 @@
                 else if(used[side]!==undefined) issues.push('mai multe canturi pe aceeasi latura');
                 else if(typeof e.grosime_mm!=='number'||!isFinite(e.grosime_mm)||e.grosime_mm<0) issues.push('grosime cant indisponibila');
                 else if(e.sub_taiere!==true && e.sub_taiere!==false)issues.push('sub-taiere necunoscuta');
-                else used[side]=e.sub_taiere ? e.grosime_mm : 0;
+                else used[side]=e.sub_taiere ? cubisEdgeDeduction(e.grosime_mm) : 0;
             });
             var dx=(used.X_min||0)+(used.X_max||0);
             var dy=(used.Y_min||0)+(used.Y_max||0);
             if(w-dx<=0||h-dy<=0)issues.push('cota rezultata nepozitiva');
             return {lungime_mm:issues.length?null:Math.round((w-dx)*1000)/1000,
                 latime_mm:issues.length?null:Math.round((h-dy)*1000)/1000,
-                scadere_x_mm:dx,scadere_y_mm:dy,stare:issues.length?issues.join('; '):'OK - scadere grosimi cant din BAZIS'};
+                scadere_x_mm:dx,scadere_y_mm:dy,stare:issues.length?issues.join('; '):'OK - scadere cant conform regulii Cubis'};
         }
         var rows = [], seen = new WeakSet(), stack = [{o:Model, parent:''}], visited = 0;
         while (stack.length) {
@@ -312,7 +319,7 @@
         var report = {versiune:7, data:new Date().toISOString(), model:str(get(Model, 'Name')), context_eveniment:context,
             desen_bln: drawingName, nume_export: exportName, sursa_nume: drawingName ? 'BLN recent' : 'numele modelului (BLN neidentificat)',
             folder_export:folder, sursa_folder:folderSource, diagnostic_folder:folderError,
-            sursa_dimensiuni:'Contur X/Y BAZIS, normalizat la mm intreg numai pentru abateri sub 0.01 mm; valori native pastrate in contur_bazis_brut. Cote Cubis = contur normalizat minus grosimea BAZIS a fiecarui cant aplicat, numai cand ClipPanel=true. Komodo/Holver = contur normalizat fara scadere cant. Fara compensare suplimentara de prefrezare. Prima cota=X, a doua=Y; fara rotire.',
+            sursa_dimensiuni:'Contur X/Y BAZIS, normalizat la mm intreg numai pentru abateri sub 0.01 mm; valori native pastrate in contur_bazis_brut. Cote Cubis = contur normalizat minus adaosul Cubis (2 -> 1.5 mm, 0.8 -> 0.3 mm, restul neschimbat) al fiecarui cant aplicat, numai cand ClipPanel=true. Komodo/Holver = contur normalizat fara scadere cant. Fara compensare suplimentara de prefrezare. Prima cota=X, a doua=Y; fara rotire.',
             numar_placi:rows.length,numar_placi_baza:rows.filter(function(r){return r.tip!=='dublura';}).length,
             numar_dubluri:rows.filter(function(r){return r.tip==='dublura';}).length, placi:rows};
         fs.writeFileSync(base + '.json', JSON.stringify(report, null, 2), {encoding:'utf8', flag:'wx'});
