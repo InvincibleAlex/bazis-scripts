@@ -1,4 +1,5 @@
 """Read-only board assembly PDF prototype. Never claims inferred paths are validated."""
+from export_performance import measured
 import argparse
 import json
 import math
@@ -160,6 +161,7 @@ def project(p):
     sy,cy=math.sin(VIEW_Y),math.cos(VIEW_Y);sx,cx=math.sin(VIEW_X),math.cos(VIEW_X)
     return cy*p[0]+sy*p[2],sx*sy*p[0]+cx*p[1]-sx*cy*p[2]
 
+@measured('gabarit_proiectat')
 def choose_page(items):
     points=[project(v) for p in items for edge in p.get('edges') or box_edges(p) for v in edge]
     if not points:return (842,595)
@@ -193,6 +195,7 @@ def display_steps(report,module):
             if k is not None:within[k]=op
     return result
 
+@measured('proiectie_si_desenare_scene')
 def draw_scene(c,parts,new_id,offset,frame,all_parts,hardware=None,mark_hardware=False,hide_hidden=False,color_hardware=False,label_all=False,*,precise_edges=False):
     new_ids=set(new_id if isinstance(new_id,list) else [new_id])
     x,y,w,h=frame
@@ -250,6 +253,7 @@ def draw_scene(c,parts,new_id,offset,frame,all_parts,hardware=None,mark_hardware
         c.setFillColorRGB(1,1,1);c.setFont('Body',9);c.drawCentredString(a[0],a[1]+14,str(p['label']))
     return pt
 
+@measured('inventare')
 def write_pdf(report,output,plan,work_views=None,include_final=True,before_step=None,progress=None,inventory_only=False):
     W,H=842,595
     font=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'/'arial.ttf'

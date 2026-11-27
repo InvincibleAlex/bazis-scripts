@@ -32,6 +32,10 @@ Lansatoarele se folosesc împreună cu pachetele lor complete. Sursele nu includ
 
 Editorul HTML poate fi deschis local. Folosește exemplele generice și păstrează configurația, valorile personale și logo-ul în afara repository-ului.
 
+## Specificația XML pentru Export Cote
+
+Versiunea curentă cere o specificație XML nativă exportată manual din BAZIS pentru modelul integral. Salvează modelul `.b3d`, apoi regenerează XML-ul din aceeași versiune. Exportul caută specificația în directorul modelului sau în directorul de predare corespunzător; dacă alegerea este ambiguă, cere selectarea fișierului. Verifică identitatea comenzii/produsului, data, reperele și multiplicitățile și solicită confirmarea provenienței. XML-ul nu este generat automat de lansator.
+
 ## Dezvoltare și verificare
 
 ```powershell

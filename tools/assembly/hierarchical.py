@@ -1,4 +1,5 @@
 """Hierarchical assembly presentation; display transforms never alter the model."""
+from export_performance import measured, stage
 import copy
 import math
 import tempfile
@@ -118,6 +119,7 @@ def pack(groups,gap=500):
         result.append((name,moved));offset+=b['max'][0]-b['min'][0]+gap
     return result
 
+@measured('pregatire_cadre')
 def prepare(report,plan):
     nodes={p['id']:p for p in report['nodes']};views={};groups={}
     for i,p in enumerate(report['panels'],1):p['label']=i
@@ -213,10 +215,10 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
     if dimensions:plan['cartus_contexts']={}
     with tempfile.TemporaryDirectory(prefix='assembly-layout-',dir=output.parent) as temp:
         intro=Path(temp)/'intro.pdf';c=canvas.Canvas(str(intro),pagesize=(W,H));page_count=0;fragments=[];seen_preparation={};cw,ch=W,H
-        def header(title,subtitle='',items=None):
+        def header(title,subtitle='',items=None,page_size=None):
             nonlocal page_count,cw,ch
             if progress:progress('Desen: '+title)
-            cw,ch=(595,842) if dimensions and page_count==0 else choose_page(items) if items else (W,H);c.setPageSize((cw,ch))
+            cw,ch=(595,842) if dimensions and page_count==0 else page_size or (choose_page(items) if items else (W,H));c.setPageSize((cw,ch))
             cover=dimensions and page_count==0
             page_count+=1
             c.setFillColor(HexColor('#172b3a'))
@@ -224,8 +226,9 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
             size=min(18,18*(cw-70)/pdfmetrics.stringWidth(heading,'Body',18)) if cover and heading else 18
             c.setFont('Body',size);c.drawString(35,ch-43,heading)
             c.setFont('Body',9);c.drawString(35,ch-65,subtitle[:130])
-        def picture(title,group_items,subtitle='',*,precise_edges=False):
-            items=[p for _,objects in group_items for p in objects];header(title,subtitle,items)
+        @measured('izometrii_si_explozii')
+        def picture(title,group_items,subtitle='',*,precise_edges=False,page_size=None):
+            items=[p for _,objects in group_items for p in objects];header(title,subtitle,items,page_size)
             panels=[p for p in items if p.get('kind')!='hardware'];fittings=[p for p in items if p.get('kind')=='hardware']
             point=draw_scene(c,panels,None,[0,0,0],(35,60,cw-70,ch-150),items,hardware=fittings,hide_hidden=True,precise_edges=precise_edges)
             from callouts import draw_callouts
@@ -276,20 +279,50 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
             module_start=assembled_pages+1
             preparation_file=Path(temp)/f"prep-{module['id']}.pdf";c=canvas.Canvas(str(preparation_file),pagesize=(W,H))
             panels,fittings=views[module['id']]
-            picture(module['name']+' | Complet',[('',panels+fittings)],precise_edges=dimensions)
-            picture(module['name']+' | Explozie pe subansambluri',exploded_groups(module,panels,fittings,nodes))
+            original_panels,original_fittings=panels,fittings
+            legacy_groups=None
+            legacy_carcass=None
+            if dimensions:
+                from constructive_orientation import resolve
+                raw_panels,raw_fittings=module_items(report,module)
+                explicit=report.get('_constructive_front_world',{}).get(module['id'])
+                basis,result=resolve(module['view_frame'],raw_panels,raw_fittings,explicit)
+                result.update(id=module['id'],name=module['name'],
+                              old_front=module['view_frame']['axes'][2],
+                              displayed_front=basis['axes'][2])
+                plan.setdefault('paic09_2',[]).append(result)
+                if basis is not module['view_frame']:
+                    panels,fittings=in_frame(raw_panels,basis),in_frame(raw_fittings,basis)
+                    legacy_groups=exploded_groups(module,original_panels,original_fittings,nodes)
+                    old=[p for p in original_panels if p.get('parent')==module.get('structural_group_id')]
+                    if old:
+                        legacy_carcass=exploded_boards(old,original_fittings)
+            changed=legacy_groups is not None
+            picture(module['name']+' | Complet',[('',panels+fittings)],precise_edges=dimensions,
+                    page_size=choose_page(original_panels+original_fittings) if changed else None)
+            picture(module['name']+' | Explozie pe subansambluri',exploded_groups(module,panels,fittings,nodes),
+                    page_size=choose_page([p for _,items in legacy_groups for p in items]) if changed else None)
             carcass=[p for p in panels if p.get('parent')==module.get('structural_group_id')]
-            if carcass:picture(module['name']+' | Carcasă - explozie plăci',exploded_boards(carcass,fittings))
+            if carcass:
+                picture(module['name']+' | Carcasă - explozie plăci',exploded_boards(carcass,fittings),
+                        page_size=choose_page([p for _,items in legacy_carcass for p in items]) if legacy_carcass else None)
             c.save();fragments.append(preparation_file)
             body=Path(temp)/f"body-{module['id']}.pdf"
             if dimensions:
                 from model_views import write_model_views
                 module_views_file=Path(temp)/f"views-{module['id']}.pdf"
-                write_model_views(dict(report,panels=panels,hardware=fittings,_cartus_corp=module['name']),module_views_file,module_name=module['name'])
+                subject={'id':module['id'],'name':module['name'],'level':'module',
+                         'uid':nodes.get(module['id'],{}).get('uid')}
+                write_model_views(dict(report,panels=panels,hardware=fittings,_cartus_corp=module['name']),
+                                  module_views_file,module_name=module['name'],subject=subject)
                 fragments.append(module_views_file)
                 views_page=assembled_pages+len(PdfReader(preparation_file).pages)+1
-                plan['cartus_contexts'][views_page]={'corp':module['name'],'_specification':True}
-                write_pdf(report,body,dict(plan,modules=[module]),work_views=views,include_final=False,progress=progress,inventory_only=True)
+                plan['cartus_contexts'][views_page]={'corp':module['name'],'_specification':True,'_orthographic_id':module['id']}
+                # This body inventory shares the already resolved drawing frame.
+                # Keep the legacy view map for the global/grouped representations.
+                write_pdf(report,body,dict(plan,modules=[module]),
+                          work_views={module['id']:(panels,fittings)},include_final=False,
+                          progress=progress,inventory_only=True)
                 fragments.append(body)
                 from export_dimensions import write_dimensions
                 dimensions_file=Path(temp)/f"dimensions-{module['id']}.pdf"
@@ -337,19 +370,20 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
             final_file=Path(temp)/'final.pdf';c=canvas.Canvas(str(final_file),pagesize=(W,H))
             picture('Ansamblu complet',[('',report['panels']+report.get('hardware',[]))]);c.save();fragments.append(final_file)
         plan['preparation_codes']={str(k):v for k,v in seen_preparation.items()}
-        writer=PdfWriter()
-        for p in fragments:
-            reader=PdfReader(p)
-            for page in reader.pages:writer.add_page(page)
-        # Consistent page numbers across sections; cover the old body-local number.
-        total=len(writer.pages)
-        for i,page in enumerate(writer.pages,1):
-            if progress:progress(f'Finalizare pagina {i} / {total}')
-            if dimensions and (i==1 or report.get('_titleblock')):continue
-            pw,ph=float(page.mediabox.width),float(page.mediabox.height)
-            buf=BytesIO();overlay=canvas.Canvas(buf,pagesize=(pw,ph));overlay.setFillColorRGB(1,1,1);overlay.rect(pw-90,14,75,25,fill=1,stroke=0)
-            overlay.setFillColorRGB(.4,.4,.4);overlay.setFont('Body',9);overlay.drawRightString(pw-35,24,f'{i} / {total}');overlay.save();buf.seek(0)
-            page.merge_page(PdfReader(buf).pages[0])
-        with output.open('wb') as stream:writer.write(stream)
+        with stage('asamblare_fragmente_PDF'):
+            writer=PdfWriter()
+            for p in fragments:
+                reader=PdfReader(p)
+                for page in reader.pages:writer.add_page(page)
+            # Consistent page numbers across sections; cover the old body-local number.
+            total=len(writer.pages)
+            for i,page in enumerate(writer.pages,1):
+                if progress:progress(f'Finalizare pagina {i} / {total}')
+                if dimensions and (i==1 or report.get('_titleblock')):continue
+                pw,ph=float(page.mediabox.width),float(page.mediabox.height)
+                buf=BytesIO();overlay=canvas.Canvas(buf,pagesize=(pw,ph));overlay.setFillColorRGB(1,1,1);overlay.rect(pw-90,14,75,25,fill=1,stroke=0)
+                overlay.setFillColorRGB(.4,.4,.4);overlay.setFont('Body',9);overlay.drawRightString(pw-35,24,f'{i} / {total}');overlay.save();buf.seek(0)
+                page.merge_page(PdfReader(buf).pages[0])
+            with output.open('wb') as stream:writer.write(stream)
         plan['sample_module']=sample_module
         return len(writer.pages)

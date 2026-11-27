@@ -1,8 +1,10 @@
 """Compact board list and separate numbered rails around the body drawing."""
+from export_performance import measured
 from reportlab.lib.colors import HexColor
 from reportlab.lib.utils import simpleSplit
 from export_assembly import center,BLUE
 
+@measured('pozitii_indicatori_inventar')
 def label_positions(parts,point,frame):
     x,y,w,h=frame;ranked=sorted(parts,key=lambda p:(point(center(p))[0],p['label']))
     result=[];split=(len(ranked)+1)//2

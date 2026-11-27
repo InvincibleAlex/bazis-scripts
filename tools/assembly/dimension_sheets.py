@@ -1,4 +1,5 @@
 """Two-sided native board sheets; all view transforms are presentation only."""
+from export_performance import measured
 import math
 from reportlab.lib.units import mm
 from dimension_sections import cross_section,section_label,draw_detail,draw_section_mark,DETAIL_WIDTH,DETAIL_HEIGHT,DETAIL_GAP,SECTIONS_PER_PAGE
@@ -192,6 +193,7 @@ def table_metrics(headers,rows,font,row_height,width):
     return widths,lines,heights
 
 
+@measured('tabele_tehnologice')
 def table(c,x,top,width,headers,rows,widths=None,colors=None,font=6.5,row_height=10,title=None):
     measured,lines,heights=table_metrics(headers,rows,font,row_height,width);width=sum(measured)
     c.saveState();cols=[x]
@@ -429,6 +431,7 @@ def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right,
     return visible
 
 
+@measured('pozitii_cote_tehnologice')
 def baseline_dimensions(c,project,entries,axis,left,bottom,side=None,width=0,height=0):
     groups=grouped_coordinates(entries);side=side or ('bottom' if axis==0 else 'left')
     sign=1 if side in ('top','right') else -1
@@ -634,6 +637,7 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     return visible,convert
 
 
+@measured('planse_tehnologice')
 def write_sheets(report,output,progress=None):
     from technological_openings import review_openings
     from bevel_sections import prepare_bevels

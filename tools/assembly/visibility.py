@@ -1,3 +1,4 @@
+from export_performance import measured
 """Depth-test vector line fragments against opaque board faces."""
 import math
 import numpy as np
@@ -30,6 +31,7 @@ class DepthMask:
         self.depth=depth_function or depth
         self.x,self.y,w,h=frame;self.r=2;self.point=point;self.tolerance=.6/max(scale,1e-9)+.05
         self.buffer=np.full((math.ceil(h*self.r)+2,math.ceil(w*self.r)+2),-np.inf,dtype=np.float32)
+    @measured('vizibilitate_DepthMask_polygon')
     def polygon(self,vertices,holes=()):
         screen=np.array([self.point(v) for v in vertices]);z=np.array([self.depth(v) for v in vertices])
         pix=(screen-np.array([self.x,self.y]))*self.r
@@ -55,6 +57,7 @@ class DepthMask:
             inside&=~cutout
         depths=coeff[0]*xx+coeff[1]*yy+coeff[2]
         buf=self.buffer[y0:y1,x0:x1];np.maximum(buf,np.where(inside,depths,-np.inf),out=buf)
+    @measured('vizibilitate_DepthMask_segments')
     def segments(self,a,b):
         aa=np.array(self.point(a));bb=np.array(self.point(b));n=max(2,math.ceil(np.linalg.norm(bb-aa)*self.r*2))
         ts=np.linspace(0,1,n);points=aa[None,:]+ts[:,None]*(bb-aa)[None,:]
@@ -75,6 +78,7 @@ class VectorDepthMask:
         self.point=point
         self.faces=[]
 
+    @measured('vizibilitate_VectorDepthMask_polygon')
     def polygon(self, vertices, holes=()):
         outer=[self.point(v) for v in vertices]
         if len(outer)<3:return
@@ -94,6 +98,7 @@ class VectorDepthMask:
             if (ay>y)!=(by>y) and x<(bx-ax)*(y-ay)/(by-ay)+ax:inside=not inside
         return inside
 
+    @measured('vizibilitate_VectorDepthMask_segments')
     def segments(self,a,b):
         ax,ay=self.point(a);bx,by=self.point(b)
         dx,dy=bx-ax,by-ay

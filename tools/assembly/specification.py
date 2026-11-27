@@ -1,9 +1,11 @@
 """Paginated, readable model specifications preceding the unchanged drawings."""
+from export_performance import measured
 import json
 import math
 import re
 import tempfile
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 from io import BytesIO
 
@@ -23,20 +25,51 @@ def natural(value):
     return [(1, int(s)) if s.isdigit() else (0, s.casefold()) for s in re.split(r'(\d+)', str(value))]
 
 
-class SingleLine(Flowable):
-    """Fit full text proportionally inside its cell, without wrapping or clipping."""
-    def __init__(self, text, width, font_size=5.5):
+def wrap_cell(text, width, measure):
+    """Wrap at natural separators, with character breaks for oversized tokens."""
+    text = ' '.join(str(text).split())
+    if measure(text) <= width:
+        return (text,)
+    lines = []
+    line = ''
+    for token in re.findall(r'[^ /;|,–—-]+[/;|,–—-]?|.', text):
+        if measure(line + token) <= width:
+            line += token
+            continue
+        if line.strip():
+            lines.append(line.rstrip())
+        line = token.lstrip()
+        while measure(line) > width:
+            lo, hi = 0, len(line)
+            while hi - lo > 1:
+                mid = (lo + hi) // 2
+                if measure(line[:mid]) <= width:
+                    lo = mid
+                else:
+                    hi = mid
+            if not lo:
+                raise ValueError('O celulă este prea îngustă pentru un caracter la fontul nominal.')
+            lines.append(line[:lo])
+            line = line[lo:]
+    if line.strip():
+        lines.append(line.rstrip())
+    return tuple(lines)
+
+
+class SpecificationCell(Flowable):
+    def __init__(self, lines, width, font_size):
         super().__init__()
-        self.text=' '.join(str(text).split())
-        self.width=width
-        measured=stringWidth(self.text,'Body',font_size)
-        self.font_size=font_size*min(1,width/measured) if measured else font_size
-        self.height=max(6.5,font_size+1)
+        self.lines = lines
+        self.width = width
+        self.font_size = font_size
+        self.leading = max(6.5, font_size + 1)
+        self.height = len(lines) * self.leading
 
     def draw(self):
         self.canv.setFillColor(colors.black)
-        self.canv.setFont('Body',self.font_size)
-        self.canv.drawString(0,1,self.text)
+        self.canv.setFont('Body', self.font_size)
+        for index, line in enumerate(reversed(self.lines)):
+            self.canv.drawString(0, 1 + index * self.leading, line)
 
 
 def operation_name(cut):
@@ -236,11 +269,13 @@ def specification_rows(report):
         if audit is not None:audit.extend(items)
         rows.append([*row[:2],str(len(items)),*row[2:7],current,row[8]])
     edging = [[str(number), key[0], key[1], fmt(key[2]) if key[2] is not None else ''] for key, number in types.items()]
-    hardware = Counter(article_key(h) for h in report.get('hardware', []) if not h.get('hidden'))
+    hardware = Counter() if '_native_xml' in report else Counter(
+        article_key(h) for h in report.get('hardware', []) if not h.get('hidden'))
     fittings = [[str(i), str(article or ''), name, str(count)] for i, ((name, article), count) in enumerate(sorted(hardware.items(), key=lambda item: natural(item[0][0])), 1)]
     return rows, edging, fittings
 
 
+@measured('tabele_generale')
 def write_specification(report, output):
     register_body_font()
     size = A4; left = bottom = 10*mm; right = size[0]-10*mm; top = size[1]-10*mm
@@ -253,6 +288,17 @@ def write_specification(report, output):
     width = right-left; story = []
     page_extents = {}
 
+    @lru_cache(maxsize=4096)
+    def measure(text, size):
+        return stringWidth(text, 'Body', size)
+
+    @lru_cache(maxsize=2048)
+    def cell_lines(text, width, size):
+        return wrap_cell(text, width, lambda value: measure(value, size))
+
+    def make_cell(value, width, size=5.5):
+        return SpecificationCell(cell_lines(str(value), width, size), width, size)
+
     class CenteredTable(Table):
         def drawOn(self, canvas, x, y, _sW=0):
             page_extents.setdefault(canvas.getPageNumber(), []).append((y, y+self._height))
@@ -264,22 +310,35 @@ def write_specification(report, output):
         ('Canturi', ['Nr.', 'Nume', 'Desemnare', 'Grosime'], [10, 70, 65, 18]),
         ('Feronerie', ['Nr.', 'Articol', 'Nume', 'Bucăți'], [10, 30, 105, 18]),
     ]
-    for (heading, headers, weights), rows in zip(definitions, specification_rows(report)):
+    tables = specification_rows(report)
+    if '_native_xml' in report:
+        native = report['_native_xml']
+        definitions[-1] = ('Feronerie', ['Nr.', 'Articol', 'Nume', 'Cantitate'], [10, 30, 105, 18])
+        definitions.append(('Profile', ['Nr.', 'Articol', 'Nume', 'Lungime (mm)', 'Bucăți'], [10, 30, 79, 26, 18]))
+        tables = (*tables[:2], native['hardware'], native['profiles'])
+    for (heading, headers, weights), rows in zip(definitions, tables):
         if not rows: continue
         widths=[width*w/sum(weights) for w in weights]
-        if heading=='Lista plăcilor':
-            for item in report.get('_paic06_rows',[]):
-                text=item['after']
-                if len(text)>0 and stringWidth(' '.join(text.split()),'Body',5.5)>widths[8]-4:
-                    item['text_fit']='Celula folosește încadrarea proporțională existentă'
-        data = [[SingleLine(cell,widths[i]-4) for i,cell in enumerate(row)] for row in [headers]+rows]
-        data.insert(0,[SingleLine(heading,width-4,font_size=8)]+['']*(len(headers)-1))
+        data = [[make_cell(cell, widths[i]-4) for i, cell in enumerate(row)]
+                for row in [headers] + rows]
+        if heading == 'Lista plăcilor':
+            for item in report.get('_paic06_rows', ()):
+                if len(data[item['row']][8].lines) > 1:
+                    item['text_fit'] = 'Celula se distribuie pe mai multe linii la fontul nominal.'
+        title = make_cell(heading, width-4, size=8)
+        header_height = title.height + 4 + max(cell.height for cell in data[0]) + 4
+        # The standard ReportLab frame reserves 6 pt at both vertical edges.
+        max_row_height = top - bottom - 12 - header_height
+        for number, row in enumerate(data[1:], 1):
+            if max(cell.height for cell in row) + 4 > max_row_height + 1e-6:
+                raise ValueError(f'{heading}, rândul {number}: textul depășește o pagină la fontul nominal.')
+        data.insert(0, [title] + ['']*(len(headers)-1))
         table = table_type(data, colWidths=widths, repeatRows=2, hAlign='LEFT', splitInRow=0)
         table.setStyle(TableStyle([
             ('SPAN',(0,0),(-1,0)),
             ('GRID', (0, 0), (-1, -1), .3, colors.grey),
             ('BACKGROUND', (0, 0), (-1, 1), colors.HexColor('#eeeeee')),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING', (0, 0), (-1, -1), 2), ('RIGHTPADDING', (0, 0), (-1, -1), 2),
             ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
         ]))

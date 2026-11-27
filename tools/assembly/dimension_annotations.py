@@ -1,4 +1,5 @@
 """Collision-aware text placement for one board view, in PDF points."""
+from export_performance import measured
 import math
 from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.rl_accel import fp_str
@@ -127,6 +128,7 @@ class AnnotationLayout:
         return (all(max(min(a[i],b[i]),min(c[i],d[i]))<=min(max(a[i],b[i]),max(c[i],d[i])) for i in (0,1))
                 and cross(a,b,c)*cross(a,b,d)<=0 and cross(c,d,a)*cross(c,d,b)<=0)
 
+    @measured('pozitii_marcaje_PAIC08')
     def cleanup(self,c,scale=1):
         markers=self.markers
         # No extra gap is imposed on existing text. Candidate positions get

@@ -1,6 +1,8 @@
 // BAZIS 2022 / Node 8. Read-only assembly illustration prototype.
 (function () {
  'use strict';
+ var scriptStart=Date.now(), performance={};
+ function record(stage,start){performance[stage]=(performance[stage]||0)+Date.now()-start;}
  var jobLog=null,jobState=null,timer=null,nativeDone=false;
  function text(v){return v==null?'':String(v);}
  function progress(message){if(jobLog)fs.appendFileSync(jobLog,new Date().toLocaleTimeString()+' | '+message+'\n','utf8');}
@@ -166,7 +168,7 @@
   if(typeof __dirname!=='undefined')packageCandidates.push(path.join(__dirname,'Export Cote'));
   packageCandidates.push(path.join(String.fromCharCode(92,92)+'RG','Bazis','Scripts','Export Cote'));
   var packageRoot=null,missing=[];
-  var required=['runtime/python/python.exe','runtime/python/python312.zip','runtime/python/python312.dll','runtime/python/python312._pth','runtime/python/vcruntime140.dll','runtime/python/vcruntime140_1.dll','tools/assembly/export_dimensions.py','tools/assembly/dimensions_console.py','tools/assembly/dimension_sheets.py','tools/assembly/dimension_page_layout.py','tools/assembly/dimension_sections.py','tools/assembly/dimension_annotations.py','tools/assembly/assembly_fonts.py','tools/assembly/hierarchical.py','tools/assembly/export_assembly.py','tools/assembly/visibility.py','tools/assembly/holes.py','tools/assembly/hardware_labels.py','tools/assembly/inventory_layout.py','tools/assembly/module_repetitions.py','tools/assembly/callouts.py','tools/assembly/assembly_console.py','tools/assembly/model_views.py','tools/assembly/preparation_annotations.py','tools/assembly/project_legend.py','tools/assembly/specification.py','tools/assembly/titleblock.py','tools/assembly/panel_validation.py','tools/assembly/technological_openings.py','tools/assembly/bevel_sections.py','runtime/python/Lib/site-packages/reportlab/__init__.py','runtime/python/Lib/site-packages/pypdf/__init__.py','runtime/python/Lib/site-packages/numpy/__init__.py','runtime/python/Lib/site-packages/PIL/__init__.py'];
+  var required=['runtime/python/python.exe','runtime/python/python312.zip','runtime/python/python312.dll','runtime/python/python312._pth','runtime/python/vcruntime140.dll','runtime/python/vcruntime140_1.dll','tools/assembly/export_dimensions.py','tools/assembly/export_performance.py','tools/assembly/diagnostic_reports.py','tools/assembly/dimensions_console.py','tools/assembly/dimension_sheets.py','tools/assembly/dimension_page_layout.py','tools/assembly/dimension_sections.py','tools/assembly/dimension_annotations.py','tools/assembly/assembly_fonts.py','tools/assembly/hierarchical.py','tools/assembly/export_assembly.py','tools/assembly/visibility.py','tools/assembly/holes.py','tools/assembly/hardware_labels.py','tools/assembly/inventory_layout.py','tools/assembly/module_repetitions.py','tools/assembly/callouts.py','tools/assembly/assembly_console.py','tools/assembly/model_views.py','tools/assembly/preparation_annotations.py','tools/assembly/project_legend.py','tools/assembly/specification.py','tools/assembly/native_xml.py','tools/assembly/titleblock.py','tools/assembly/panel_validation.py','tools/assembly/technological_openings.py','tools/assembly/bevel_sections.py','runtime/python/Lib/site-packages/reportlab/__init__.py','runtime/python/Lib/site-packages/pypdf/__init__.py','runtime/python/Lib/site-packages/numpy/__init__.py','runtime/python/Lib/site-packages/PIL/__init__.py'];
   for(var pc=0;pc<packageCandidates.length;pc++){
    var candidate=packageCandidates[pc],absent=required.filter(function(file){return !fs.existsSync(path.join(candidate,file));});
    if(!absent.length){packageRoot=candidate;break;}
@@ -174,31 +176,118 @@
   }
   if(!packageRoot)throw Error('Pachetul Export Cote lipseste sau este incomplet. Copiati folderul complet Export Cote langa script.\n'+missing.join('\n'));
   var cfg={python:path.join(packageRoot,'runtime','python','python.exe')};
-  var helper=path.join(packageRoot,'tools','assembly','export_dimensions.py');
-  var now=new Date();
-  function pad(n){return ('0'+n).slice(-2);}
-  var stamp=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+' '+pad(now.getHours())+'-'+pad(now.getMinutes())+'-'+pad(now.getSeconds());
-  var suggested='Cote placi - '+stamp+'.pdf';
-  var ps="$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.SaveFileDialog; $d.Title='Salveaza cotele placilor'; $d.Filter='PDF (*.pdf)|*.pdf'; $d.FileName=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+Buffer.from(suggested,'utf8').toString('base64')+"')); $d.OverwritePrompt=$true; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.ShowInTaskbar=$false; $owner.Opacity=0; $owner.Show(); if($d.ShowDialog($owner) -eq 'OK'){[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.FileName))}; $d.Dispose(); $owner.Dispose()";
+  var assemblyRoot=path.join(packageRoot,'tools','assembly');
+  var helper=path.join(assemblyRoot,'export_dimensions.py');
+  if(typeof Model==='undefined'||!Model)throw Error('Deschideti un model.');
+  var filename=typeof ModelFilename==='string'?ModelFilename:text(get(Action,'ModelFilename'));
+  progress('Citire model: '+filename);
+  var modelAtStart=Model;
+  var orderArticle=typeof Article!=='undefined'?Article:
+   (typeof currentFileData!=='undefined'?get(currentFileData,'article'):null);
+  var order={name:text(get(orderArticle,'OrderName')).trim(),code:text(get(orderArticle,'OrderCode')).trim(),product_name:text(get(orderArticle,'Name')).trim(),product_code:text(get(orderArticle,'Code')).trim(),source:'BAZIS Article.OrderName'};
+  function safeNamePart(value){
+   return value.replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/[ .]+$/g,'').trim();
+  }
+  var productArticle=typeof currentFileData!=='undefined'?get(currentFileData,'article'):null;
+  var nativePrefix=get(productArticle,'ShortSign');
+  if(nativePrefix==null)nativePrefix=get(orderArticle,'ShortSign');
+  var designationPrefix=safeNamePart(text(nativePrefix).trim());
+  var orderName=safeNamePart(order.name);
+  var orderLabel=designationPrefix?(designationPrefix+'.'+(orderName?' '+orderName:'')):orderName;
+  var baseName=[orderLabel,safeNamePart(order.product_name),safeNamePart(order.product_code),'Cote Placi'].filter(Boolean).join(' - ');
+  function nextPdfName(directory){
+   var prefix=(baseName+' ').toLowerCase(),max=-1;
+   fs.readdirSync(directory).forEach(function(entry){
+    var name=entry.toLowerCase();
+    if(name.slice(0,prefix.length)!==prefix)return;
+    var suffix=/^([0-9]+)\.pdf$/.exec(name.slice(prefix.length));
+    if(!suffix)return;
+    try{if(!fs.statSync(path.join(directory,entry)).isFile())return;}
+    catch(e){if(e.code==='ENOENT')return;throw e;}
+    var index=Number(suffix[1]);
+    if(!Number.isSafeInteger(index)||index===Number.MAX_SAFE_INTEGER)throw Error('Index PDF prea mare: '+entry.name);
+    max=Math.max(max,index);
+   });
+   return baseName+' '+(max+1)+'.pdf';
+  }
+  function checkPdfPath(file){
+   var name=path.basename(file);
+   if(!/\.pdf$/i.test(name)||/[<>:"/\\|?*\x00-\x1f]/.test(name)||
+      /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])\s*(?:\.|$)/i.test(name))
+    throw Error('Alegeti un nume PDF valid pentru Windows: '+name);
+   if(name.length>255||file.length>259)
+    throw Error('Calea PDF depaseste limita Windows a dialogului. Alegeti un director sau un nume mai scurt: '+file);
+  }
+  function choosePdf(directory,suggested,notice){
+   var ps="$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.SaveFileDialog; $d.Title="+psValue(notice||'Salveaza cotele placilor')+"; $d.Filter='PDF (*.pdf)|*.pdf'; $d.DefaultExt='pdf'; $d.InitialDirectory="+psValue(directory)+"; $d.FileName="+psValue(suggested)+"; $d.OverwritePrompt=$false; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.ShowInTaskbar=$false; $owner.Opacity=0; $owner.Show(); try { $watch=[Diagnostics.Stopwatch]::StartNew(); $answer=$d.ShowDialog($owner); $watch.Stop(); $watch.ElapsedMilliseconds; if($answer -eq 'OK'){[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.FileName))} } finally { $d.Dispose(); $owner.Dispose() }";
+   var raw=cp.execFileSync('powershell.exe',['-NoProfile','-STA','-EncodedCommand',Buffer.from(ps,'utf16le').toString('base64')],{encoding:'utf8',timeout:600000,windowsHide:true}).trim();
+   var response=raw.split(/\r?\n/),modalMs=Number(response[0]);
+   performance.asteptare_dialog_PDF_ms=(performance.asteptare_dialog_PDF_ms||0)+modalMs;
+   return response[1]?Buffer.from(response[1],'base64').toString('utf8'):'';
+  }
   var input=path.join(os.tmpdir(),'bazis-dimensions-'+process.pid+'-'+Date.now()+'.json');
   var job=input+'.job',consoleHelper=path.join(path.dirname(helper),'dimensions_console.py');
   if(!fs.existsSync(consoleHelper))throw Error('Lipseste consola: '+consoleHelper);
   jobLog=job+'.log';jobState=job+'.state';fs.writeFileSync(jobLog,'EXPORT COTE\nPornire script. Se asteapta alegerea fisierului PDF...\n','utf8');
   function psValue(value){return "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+Buffer.from(value,'utf8').toString('base64')+"'))";}
-  var terminal="$Host.UI.RawUI.WindowTitle='BAZIS - Export cote'; [Console]::OutputEncoding=[Text.Encoding]::UTF8; Write-Host 'Pornire export BAZIS...'; & ("+psValue(cfg.python)+") '-u' ("+psValue(consoleHelper)+") '--job' ("+psValue(job)+") '--input' ("+psValue(input)+"); Write-Host ''; Write-Host 'Apasa Enter sau orice alta tasta pentru inchidere.' -ForegroundColor Cyan; while([Console]::KeyAvailable){[void][Console]::ReadKey($true)}; [void][Console]::ReadKey($true)";
+  var terminal="$Host.UI.RawUI.WindowTitle='BAZIS - Export cote'; [Console]::OutputEncoding=[Text.Encoding]::UTF8; Write-Host 'Pornire export BAZIS...'; & ("+psValue(cfg.python)+") '-u' ("+psValue(consoleHelper)+") '--job' ("+psValue(job)+") '--input' ("+psValue(input)+")"+(environment.BAZIS_EXPORT_COTE_SAVE_JSON==='0'?" '--no-paic-json'":"")+"; Write-Host ''; Write-Host 'Apasa Enter sau orice alta tasta pentru inchidere.' -ForegroundColor Cyan; while([Console]::KeyAvailable){[void][Console]::ReadKey($true)}; [void][Console]::ReadKey($true)";
   var encoded=Buffer.from(terminal,'utf16le').toString('base64');
   var launch="$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-EncodedCommand','"+encoded+"') -WindowStyle Normal; $ack="+psValue(job+'.opened')+"; $until=[DateTime]::UtcNow.AddSeconds(12); while(!(Test-Path -LiteralPath $ack) -and [DateTime]::UtcNow -lt $until){Start-Sleep -Milliseconds 100}; if(!(Test-Path -LiteralPath $ack)){throw 'Terminalul de progres nu a pornit. Citirea modelului nu a inceput.'}";
   // No inherited stdout/stderr pipes: the visible terminal outlives this
   // launcher. Waiting for its pipe EOF would keep BAZIS blocked indefinitely.
+  record('initializare_script_ms',scriptStart);
+  var launchStart=Date.now();
   cp.execFileSync('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(launch,'utf16le').toString('base64')],{stdio:'ignore',windowsHide:true,timeout:15000});
-  var raw=cp.execFileSync('powershell.exe',['-NoProfile','-STA','-EncodedCommand',Buffer.from(ps,'utf16le').toString('base64')],{encoding:'utf8',timeout:600000,windowsHide:true}).trim();
-  if(!raw){progress('Export anulat din dialogul de salvare.');fs.writeFileSync(jobState,'cancelled','utf8');return;}
-  var destination=Buffer.from(raw,'base64').toString('utf8');
+  record('lansare_consola_ms',launchStart);
+  var directory=filename&&path.isAbsolute(filename)?path.dirname(filename):os.homedir();
+  var automatic=nextPdfName(directory),suggested=automatic,notice='',destination;
+  while(true){
+   try{checkPdfPath(path.join(directory,suggested));}
+   catch(e){notice=e.message;suggested='';}
+   var dialogStart=Date.now();
+   destination=choosePdf(directory,suggested,notice);
+   record('apeluri_dialog_PDF_total_ms',dialogStart);
+   if(!destination){progress('Export anulat din dialogul de salvare.');fs.writeFileSync(jobState,'cancelled','utf8');return;}
+   directory=path.dirname(destination);
+   var selected=path.basename(destination);
+   if(selected===automatic){
+    automatic=nextPdfName(directory);
+    if(selected!==automatic){suggested=automatic;notice='Index actualizat pentru directorul ales. Confirmati destinatia.';continue;}
+   }
+   try{checkPdfPath(destination);}
+   catch(e){suggested=selected;notice=e.message;continue;}
+   if(fs.existsSync(destination)){
+    suggested=selected===automatic?nextPdfName(directory):selected;
+    notice='Fisierul exista deja. Alegeti un alt nume.';
+    continue;
+   }
+   break;
+  }
   fs.writeFileSync(job+'.output',destination,'utf8');
-  if(typeof Model==='undefined'||!Model)throw Error('Deschideti un model.');
-  var filename=typeof ModelFilename==='string'?ModelFilename:text(get(Action,'ModelFilename'));
-  progress('Citire model: '+filename);
-  var modelAtStart=Model;
+  var xmlStart=Date.now();
+  var contextFile=job+'.xml-context',receiptFile=job+'.xml-receipt';
+  var selectionCount=get(Model,'SelectionCount');
+  fs.writeFileSync(contextFile,JSON.stringify({model:filename,order:order,scope:selectionCount===0?'whole_model':'selection_or_unknown',dirty:null,destination:destination}),'utf8');
+  var probe=cp.spawnSync(cfg.python,[path.join(assemblyRoot,'native_xml.py'),contextFile,receiptFile],{encoding:'utf8',windowsHide:true,timeout:600000});
+  if(probe.error||probe.status!==0)throw Error((probe.stderr||'Validarea XML nu a fost finalizat\u0103.').trim());
+  if(Model!==modelAtStart)throw Error('Modelul activ s-a schimbat \u00een timpul valid\u0103rii XML.');
+  var nativeXml=JSON.parse(fs.readFileSync(receiptFile,'utf8'));
+  var xmlTiming=nativeXml._performance||{};
+  delete nativeXml._performance;
+  record('proces_XML_total_ms',xmlStart);
+  performance.asteptare_dialoguri_XML_ms=1000*(xmlTiming.asteptare_dialoguri_XML||{}).seconds||0;
+  performance.proces_XML_activ_ms=Math.max(0,performance.proces_XML_total_ms-performance.asteptare_dialoguri_XML_ms);
+  performance.etape_XML=xmlTiming;
+  var scanStart=Date.now();
+  progress('Model: '+nativeXml.model+' | Proiect: '+nativeXml.project+' | Predare: '+nativeXml.delivery);
+  progress('XML: '+nativeXml.xml+' | '+nativeXml.identity+' | '+nativeXml.revision);
+  progress('PDF: '+destination+' | Feronerie: '+nativeXml.hardware.length+' | Profile fizice: '+nativeXml.physical_profiles+' | \u00cenregistr\u0103ri nedeterminate: '+nativeXml.unresolved.length);
+  progress('PAIC | Necesarul de feronerie si profile ramane nevalidat pentru productie.');
+  nativeXml.exceptions.forEach(function(item){
+   var key=item.article?item.article+' | ':'';
+   progress('EXCEP\u021aIE XML | '+item.kind+' | '+key+item.name+(item.records?' | \u00eenregistr\u0103ri XML: '+item.records:''));
+  });
+
   var nodes=[],panels=[],hardware=[],panelRefs=[],articleByUid=Object.create(null),seen=new WeakSet(),stack=[{o:Model,parent:null,ancestors:[],hidden:false}],visited=0;
   function scanBatch(){
    try{
@@ -218,7 +307,9 @@
    var article=!isPanel&&!hole&&(/\r\s*\S/.test(name)||(!count&&/surub|\u0219urub|diblu|balama|glisier|picior|clem|m\u00e2ner|maner|suport|t\u0103lpici|talpici/i.test(name)));
    if(composite||article){
     progress('Feronerie '+visited+': '+name.replace(/\r/g,' | ')+' - identificare pentru gaurire');
+    var hardwareStart=Date.now();
     var b=validBounds(o),geometry=hardwareGeometry(o),connected=[];
+    record('geometrie_feronerie_ms',hardwareStart);
     // Do not search the entire model for every fitting. Receiving panels are
     // assigned once below by native NewHoleDrilling, using Body/Fastener UIDs.
     hardware.push({id:id,uid:get(o,'UID'),parent:item.parent,ancestors:item.ancestors,name:name,article:name.indexOf('\r')>=0?name.split('\r').slice(1).join(' ').trim():'',designation:text(get(o,'Designation')),hidden:false,source_hidden:hidden,bounds:b||{min:null,max:null},edges:geometry.edges,approximate_components:geometry.approximate_components,native_edge_components:geometry.native_edge_components,insertion_axis:geometry.insertion_axis,connected_panel_uids:connected});
@@ -236,7 +327,11 @@
    // Only furniture boards, excluding panels used to model fittings.
    if(isPanel&&/\b(PAL|MDF|HDF|PFL|placaj|plywood|Blat)\b/i.test(material)){
     progress('Placa '+visited+': '+text(get(o,'Designation'))+' | '+name);
-    var p={id:id,uid:get(o,'UID'),parent:item.parent,ancestors:item.ancestors,name:name,designation:text(get(o,'Designation')),material:material,technical_material:technicalMaterial,width:w,height:h,thickness:t,frame:objectFrame(o),bounds:{min:vec(get(o,'GabMin')),max:vec(get(o,'GabMax'))},edges:[],warnings:[],machining:panelMachining(o)};
+    var panelStart=Date.now();
+    var p={id:id,uid:get(o,'UID'),parent:item.parent,ancestors:item.ancestors,name:name,designation:text(get(o,'Designation')),material:material,technical_material:technicalMaterial,width:w,height:h,thickness:t,frame:objectFrame(o),bounds:{min:vec(get(o,'GabMin')),max:vec(get(o,'GabMax'))},edges:[],warnings:[],machining:null};
+    var machiningStart=Date.now();
+    p.machining=panelMachining(o);
+    record('prelucrari_native_ms',machiningStart);
     var contour=get(o,'Contour'),n=get(contour,'Count'),objects=get(contour,'Objects');
     p.native_contour=readContour(contour,0);
     p.local_bounds={min:point2(get(contour,'Min')),max:point2(get(contour,'Max'))};
@@ -269,6 +364,7 @@
     if(p.machining.cuts.length&&!panelEdges.length)p.warnings.push('Frezari citite ca parametri BAZIS; forma 3D a prelucrarilor nu este confirmata.');
     if(!p.bounds.min||!p.bounds.max)throw Error('Gabarit indisponibil: '+name);
     // Cuts are not safely serialized yet. Keep those boards as individual steps.
+    var bandStart=Date.now();
     var cutCount=get(get(o,'Cuts'),'Count'),butts=get(o,'Butts'),buttCount=get(butts,'Count');
     p.duplicate_signature=null;
     if(cutCount===0&&typeof buttCount==='number'&&buttCount>=0&&buttCount<10000&&!p.warnings.length){
@@ -291,25 +387,39 @@
      p.module_comparison.layers.forEach(function(l){['Material','Thickness','Side','TextureOrientation'].forEach(function(k){if(typeof l[k]==='undefined')p.module_comparison.complete=false;});});
      if(typeof p.module_comparison.texture.TextureOrientation==='undefined')p.module_comparison.complete=false;
     }
+    record('canturi_si_semnaturi_comparatie_ms',bandStart);
+    record('placi_geometrie_canturi_si_prelucrari_ms',panelStart);
     panels.push(p);
     panelRefs.push({object:o,record:p});
    }
    var count=get(o,'Count');
    if(typeof count==='number'&&count>=0&&count<=100000){var list=get(o,'Objects');for(var i=count-1;i>=0;i--)stack.push({o:get(list||o,i),parent:id,ancestors:item.ancestors.concat([id]),hidden:hidden});}
   }
+  record('extragere_model_loturi_active_ms',batchStart);
   if(stack.length){timer=setTimeout(scanBatch,20);return;}
+  record('extragere_model_timp_total_ms',scanStart);
   if(!panels.length)throw Error('Nu am gasit placi PAL/MDF/HDF/PFL/placaj.');
   progress('Citire terminata: '+panels.length+' placi; '+hardware.length+' articole de feronerie');
   progress('Calcul nativ al gaurilor in BAZIS...');
+  var drillStart=Date.now();
   var drilling=calculatePanelHoles(panelRefs,articleByUid);
+  record('gaurire_nativa_ms',drillStart);
   progress('Calcul gauri terminat: '+(drilling.hole_count||0)+' gauri');
   // Native order metadata, independent of the model filename or folder name.
-  var orderArticle=typeof Article!=='undefined'?Article:
-   (typeof currentFileData!=='undefined'?get(currentFileData,'article'):null);
-  var order={name:text(get(orderArticle,'OrderName')).trim(),code:text(get(orderArticle,'OrderCode')).trim(),product_name:text(get(orderArticle,'Name')).trim(),product_code:text(get(orderArticle,'Code')).trim(),source:'BAZIS Article.OrderName'};
-  var report={schema:1,model:filename,order:order,nodes:nodes,panels:panels,hardware:hardware,drilling:drilling,geometry_source:'BAZIS native edges / contour extrusion / NewHoleDrilling global coordinates'};
+  var report={schema:1,model:filename,order:order,_native_xml:nativeXml,nodes:nodes,panels:panels,hardware:hardware,drilling:drilling,geometry_source:'BAZIS native edges / contour extrusion / NewHoleDrilling global coordinates'};
   progress('Pregatire date pentru PDF...');
-  fs.writeFileSync(input,JSON.stringify(report),'utf8');
+  var serializationStart=Date.now();
+  var serialized=JSON.stringify(report);
+  record('serializare_JSON_ms',serializationStart);
+  var transferStart=Date.now();
+  fs.writeFileSync(input,serialized,'utf8');
+  record('scriere_transfer_JSON_ms',transferStart);
+  record('BAZIS_total_ms',scriptStart);
+  try{
+   performance.octeti_transfer_JSON=fs.statSync(input).size;
+   fs.writeFileSync(job+'.performance',JSON.stringify(performance),'utf8');
+  }
+  catch(error){progress('PAIC-13 | Masuratorile BAZIS nu au putut fi salvate: '+text(error.message));}
   progress('Date pregatite. Generarea PDF continua in terminal; BAZIS poate fi folosit.');
   fs.writeFileSync(jobState,'ready','utf8');
   nativeDone=true;Action.Finish();

@@ -1,4 +1,10 @@
 """Visible export log and independent PDF worker; never accesses the BAZIS model."""
+import sys
+from pathlib import Path
+
+if __name__ == '__main__':
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import argparse
 import json
 from pathlib import Path
@@ -53,9 +59,10 @@ def run_renderer(args,console):
     child.stdout.close();child.stderr.close()
     return subprocess.CompletedProcess(args,code,output)
 
-def run(job, source, output=None, *, wait_seconds=1800):
+def run(job, source, output=None, *, wait_seconds=1800, no_paic_json=False):
     log=Path(str(job)+'.log');state=Path(str(job)+'.state');diagnostic=Path(str(job)+'.cote.json');offset=0
     console=LiveConsole();success=False
+    native_timing=Path(str(job)+'.performance')
     try:
         console.write('BAZIS | Export cote\n');console.start()
         Path(str(job)+'.opened').write_text('ready',encoding='utf-8')
@@ -79,8 +86,10 @@ def run(job, source, output=None, *, wait_seconds=1800):
             time.sleep(.25)
         console.write('\nGenerare PDF in proces separat...')
         if output is None:output=Path(Path(str(job)+'.output').read_text(encoding='utf-8'))
+        render_start=time.perf_counter()
         result=run_renderer([sys.executable,'-u',str(Path(__file__).with_name('export_dimensions.py')),
-            '--input',str(source),'--output',str(output),'--diagnostic',str(diagnostic),'--progress'],console)
+            '--input',str(source),'--output',str(output),'--progress','--no-overwrite','--performance']+(['--no-paic-json'] if no_paic_json else []),console)
+        render_elapsed=time.perf_counter()-render_start
         if result.returncode:raise RuntimeError('Generatorul PDF a esuat (cod %s). Vezi eroarea de mai sus.'%result.returncode)
         receipt=json.loads(result.stdout)
         if not isinstance(receipt,dict) or receipt.get('ok') is not True or receipt.get('pdf')!=str(output):
@@ -93,6 +102,24 @@ def run(job, source, output=None, *, wait_seconds=1800):
         console.write('\nTERMINAT | %s placi | %s gauri | %s pagini'%(panels,holes,pages))
         success=True
         console.write('PDF: '+str(output)+'\nModelul BAZIS nu a fost modificat.')
+        if not no_paic_json and receipt.get('diagnostic_base') and isinstance(receipt.get('performance'),dict):
+            timing=receipt['performance']
+            try:
+                native=json.loads(native_timing.read_text(encoding='utf8')) if native_timing.is_file() else {}
+                timing['native']=native
+                timing['renderer_subprocess_seconds']=round(render_elapsed,6)
+                timing['renderer_launch_and_transport_residual_seconds']=round(max(0,render_elapsed-timing['renderer_seconds']),6)
+                if 'BAZIS_total_ms' in native:
+                    waits=native['asteptare_dialog_PDF_ms']+native['asteptare_dialoguri_XML_ms']
+                    timing['user_dialog_seconds']=round(waits/1000,6)
+                    timing['active_and_system_seconds']=round((native['BAZIS_total_ms']-waits)/1000+render_elapsed,6)
+                timing.update(schema=1,pdf=str(output),pages=pages,panels=panels,holes=holes,
+                              resolution='Timpi de perete. Etapele Python imbricate sunt incluzive și nu se însumează.')
+                from diagnostic_reports import write_report
+                target=write_report(Path(receipt['diagnostic_base']),'.PAIC-13.json',timing)
+                console.write('PAIC-13 | Raport performanță: '+str(target))
+            except (OSError,ValueError,KeyError,TypeError) as error:
+                console.write('PAIC-13 | PDF salvat; raportul de performanță nu a fost publicat: '+str(error))
         return 0
     except Exception as error:
         console.write('\nEROARE: '+str(error),error=True)
@@ -100,7 +127,8 @@ def run(job, source, output=None, *, wait_seconds=1800):
     finally:
         console.stop()
         if success:
-            files=[source,log,state,Path(str(job)+'.opened'),Path(str(job)+'.output'),diagnostic]
+            files=[source,log,state,Path(str(job)+'.opened'),Path(str(job)+'.output'),diagnostic,
+                   Path(str(job)+'.xml-context'),Path(str(job)+'.xml-receipt'),native_timing]
             for file in files:
                 try:file.unlink(missing_ok=True)
                 except OSError as error:console.write('Fisier auxiliar pastrat: '+str(file)+' | '+str(error))
@@ -108,6 +136,7 @@ def run(job, source, output=None, *, wait_seconds=1800):
 def main():
     sys.stdout.reconfigure(encoding='utf-8');sys.stderr.reconfigure(encoding='utf-8')
     parser=argparse.ArgumentParser();parser.add_argument('--job',type=Path,required=True);parser.add_argument('--input',type=Path,required=True);parser.add_argument('--output',type=Path)
-    args=parser.parse_args();return run(args.job,args.input,args.output)
+    parser.add_argument('--no-paic-json',action='store_true')
+    args=parser.parse_args();return run(args.job,args.input,args.output,no_paic_json=args.no_paic_json)
 
 if __name__=='__main__':sys.exit(main())

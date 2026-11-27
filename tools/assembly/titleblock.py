@@ -1,4 +1,5 @@
 """Render the editor's version-2 grid in physical mm, with native BAZIS bindings."""
+from export_performance import measured, stage
 import base64
 from collections import Counter
 from datetime import datetime
@@ -99,6 +100,7 @@ def substitute_parameters(text,values):
     return re.sub(r'\{\s*([^\W\d]\w*)\s*:?\s*\}',replace,text)
 
 
+@measured('layout_cartus')
 def layout(template,values):
     register_body_font()
     if 'BodyBold' not in getRegisteredFontNames():
@@ -152,6 +154,7 @@ def layout(template,values):
     return {'rows':prepared,'bounds':bounds,'page_size':(p['width']*mm,p['height']*mm),'height':height}
 
 
+@measured('desenare_cartus')
 def draw(c,template,model):
     p=template['page'];b=template['block'];m=p['margins'];ph=p['height']*mm
     c.saveState();c.setStrokeColorRGB(0,0,0);c.setFillColorRGB(0,0,0);c.setLineWidth(b['stroke']*mm)
@@ -161,7 +164,8 @@ def draw(c,template,model):
             x=cell['x']*mm;y=ph-(cell['y']+cell['height'])*mm;w=cell['width']*mm;h=cell['height']*mm
             c.rect(x,y,w,h,stroke=1,fill=0);size=cell['font']*mm;line_height=size*1.25;lines=cell['lines'];caption=(len(lines)*line_height+2*b['padding']*mm) if lines else 0
             if cell.get('logo') and template.get('logo'):
-                raw=base64.b64decode(template['logo'].split(',',1)[1]);c.drawImage(ImageReader(BytesIO(raw)),x,y+caption,width=w,height=h-caption,preserveAspectRatio=True,anchor='c',mask='auto')
+                with stage('logo_cartus_decodare_si_desenare'):
+                    raw=base64.b64decode(template['logo'].split(',',1)[1]);c.drawImage(ImageReader(BytesIO(raw)),x,y+caption,width=w,height=h-caption,preserveAspectRatio=True,anchor='c',mask='auto')
             c.setFont(cell['font_name'],size)
             first=y+b['padding']*mm+len(lines)*line_height-size if cell.get('logo') else y+(h+len(lines)*line_height)/2-size
             for index,line in enumerate(lines):
@@ -184,6 +188,7 @@ def content_transform(width,height,bounds):
     return Transformation().scale(scale).translate(x,y)
 
 
+@measured('aplicare_cartuse')
 def frame_pdf(path,template,report,contexts,*,cover_without_titleblock=False):
     reader=PdfReader(path);writer=PdfWriter();count=len(reader.pages)
     for number,page in enumerate(reader.pages,1):

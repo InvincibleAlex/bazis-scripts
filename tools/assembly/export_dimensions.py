@@ -1,4 +1,13 @@
 """Experimental native board dimension sheets. No hardware drawing or model edits."""
+import sys
+from time import perf_counter
+
+_PROCESS_START = perf_counter()
+from pathlib import Path
+
+if __name__ == '__main__':
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import argparse
 import json
 import math
@@ -236,18 +245,40 @@ def write_dimensions(report,output,progress=None):
 def main():
     import sys
     sys.stdout.reconfigure(encoding='utf-8');sys.stderr.reconfigure(encoding='utf-8')
-    parser=argparse.ArgumentParser();parser.add_argument('--input',required=True);parser.add_argument('--output',required=True);parser.add_argument('--progress',action='store_true');parser.add_argument('--diagnostic',type=Path);args=parser.parse_args()
-    source=json.loads(Path(args.input).read_text(encoding='utf-8-sig'));report=source.get('report',source)
+    parser=argparse.ArgumentParser();parser.add_argument('--input',required=True);parser.add_argument('--output',required=True);parser.add_argument('--progress',action='store_true');parser.add_argument('--diagnostic',type=Path)
+    parser.add_argument('--no-paic-json', action='store_true', help='Nu publica rapoartele PAIC lângă PDF.')
+    parser.add_argument('--no-overwrite', action='store_true', help='Publica un PDF nou, fără a înlocui unul existent.')
+    parser.add_argument('--performance',action='store_true')
+    args=parser.parse_args()
+    import export_performance as perf
+    if args.performance:
+        perf.start()
+    bootstrap=perf_counter()-_PROCESS_START
+    with perf.stage('citire_si_deserializare_JSON'):
+        source=json.loads(Path(args.input).read_text(encoding='utf-8-sig'));report=source.get('report',source)
+    native_performance=report.pop('_export_performance',None)
     if not report.get('panels'):raise ValueError('Nu există plăci pentru cotare')
     output=Path(args.output)
-    diagnostic_path=args.diagnostic or output.with_suffix('.cote.json')
-    if diagnostic_path.resolve() in (output.resolve(),Path(args.input).resolve()):
+    diagnostic_path=args.diagnostic
+    if diagnostic_path is not None and diagnostic_path.resolve() in (output.resolve(),Path(args.input).resolve()):
         raise ValueError('Calea raportului trebuie sa fie distincta de PDF si de fisierul de intrare')
     if output.suffix.lower()!='.pdf':raise ValueError('Destinația trebuie să fie PDF')
+    if args.no_overwrite and output.exists():
+        raise FileExistsError(f'PDF-ul există deja: {output}')
     progress=(lambda s:print(s,file=sys.stderr,flush=True)) if args.progress else None
     from export_assembly import clean_report,make_plan
     from holes import add_hole_edges
     from hierarchical import write_hierarchical
+    if '_native_xml' in report:
+        from native_xml import review_geometry, verify_files
+        native=report['_native_xml']
+        if not Path(report['model']).samefile(native['model']) or report.get('order') != native['order']:
+            raise ValueError('Identitatea modelului s-a schimbat după validarea sursei.')
+        if Path(args.output).resolve() != Path(native['destination']).resolve():
+            raise ValueError('Destinația PDF nu corespunde rulării validate.')
+        verify_files(native)
+        native['geometry_review']=review_geometry(report,native)
+        native.pop('geometry')
     report=clean_report(report)
     add_hole_edges(report)
     from titleblock import load_template
@@ -262,18 +293,22 @@ def main():
     report['_paic05_findings']=[]
     report['_paic06_rows']=[]
     report['_paic08_findings']=[]
+    report['_paic09_findings']=[]
     from bevel_sections import legend_labels
     report['_paic04_labels']=legend_labels(report)
     from pypdf import PdfReader
     with tempfile.TemporaryDirectory(prefix='.cote-',dir=output.parent) as directory:
-        staged=Path(directory)/output.name
+        staged=Path(directory)/'document.pdf' if args.no_overwrite else Path(directory)/output.name
         pages=write_hierarchical(report,staged,plan,progress=progress,dimensions=True)
         from specification import insert_specification
-        pages+=insert_specification(report,staged,plan)
+        with perf.stage('inserare_tabele_si_reasamblare'):
+            pages+=insert_specification(report,staged,plan)
         from model_views import insert_model_views
-        pages+=insert_model_views(report,staged,plan)
+        with perf.stage('inserare_vederi_si_reasamblare'):
+            pages+=insert_model_views(report,staged,plan)
         from project_legend import insert_project_legend
-        pages+=insert_project_legend(report,staged,plan)
+        with perf.stage('inserare_legenda_si_reasamblare'):
+            pages+=insert_project_legend(report,staged,plan)
         if template:
             from titleblock import frame_pdf
             frame_pdf(staged,template,report,plan.get('cartus_contexts',{}),cover_without_titleblock=True)
@@ -282,79 +317,91 @@ def main():
             if pages<1 or len(PdfReader(stream).pages)!=pages:
                 raise ValueError('Numarul paginilor din PDF nu corespunde exportului')
         report.pop('_paic04_labels',None)
-        with tempfile.TemporaryDirectory(prefix='.cote-report-',dir=diagnostic_path.parent) as report_dir:
-            diagnostic=Path(report_dir)/diagnostic_path.name
-            diagnostic.write_text(json.dumps({'report':report,'dimensions':result,'plan':plan},ensure_ascii=False),encoding='utf-8')
-            diagnostic.replace(diagnostic_path)
-        staged.replace(output)
-    # Validation is separate from the PDF and cannot reject a production export.
-    try:
-        from panel_validation import validate_panels
-        validation=validate_panels(report,plan)
-        target=output.with_suffix('.PAIC-02.json')
-        with tempfile.TemporaryDirectory(prefix='.paic02-',dir=output.parent) as directory:
-            temporary=Path(directory)/target.name
-            temporary.write_text(json.dumps(validation,ensure_ascii=False,indent=2),encoding='utf-8')
-            temporary.replace(target)
-    except Exception as error:
-        print('PAIC-02: raportul tehnic nu a putut fi generat: '+str(error),file=sys.stderr)
-    try:
-        findings=report['_paic03_findings']
-        pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
-        for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
-        target=output.with_suffix('.PAIC-03.json')
-        with tempfile.TemporaryDirectory(prefix='.paic03-',dir=output.parent) as directory:
-            temporary=Path(directory)/target.name
-            temporary.write_text(json.dumps({'model':report.get('model'),'panels':len(report['panels']),
-                                             'operations':findings},ensure_ascii=False,indent=2),encoding='utf-8')
-            temporary.replace(target)
-    except (OSError, ValueError, TypeError) as error:
-        print('PAIC-03: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
-    try:
-        findings=report['_paic04_findings']
-        pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
-        for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
-        target=output.with_suffix('.PAIC-04.json')
-        with tempfile.TemporaryDirectory(prefix='.paic04-',dir=output.parent) as directory:
-            temporary=Path(directory)/target.name
-            temporary.write_text(json.dumps({'model':report.get('model'),'panels':len(report['panels']),
-                                             'operations':findings},ensure_ascii=False,indent=2),encoding='utf-8')
-            temporary.replace(target)
-    except (OSError,ValueError,TypeError) as error:
-        print('PAIC-04: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
-    try:
-        findings=report['_paic05_findings']
-        pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
-        for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
-        target=output.with_suffix('.PAIC-05.json')
-        with tempfile.TemporaryDirectory(prefix='.paic05-',dir=output.parent) as directory:
-            temporary=Path(directory)/target.name
-            temporary.write_text(json.dumps({'model':report.get('model'),'panels':len(report['panels']),
-                                             'operations':findings},ensure_ascii=False,indent=2),encoding='utf-8')
-            temporary.replace(target)
-    except (OSError,ValueError,TypeError) as error:
-        print('PAIC-05: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
-    try:
-        from specification import processing_report
-        target=output.with_suffix('.PAIC-06.json')
-        with tempfile.TemporaryDirectory(prefix='.paic06-',dir=output.parent) as directory:
-            temporary=Path(directory)/target.name
-            temporary.write_text(json.dumps(processing_report(report,plan),ensure_ascii=False,indent=2),encoding='utf8')
-            temporary.replace(target)
-    except (OSError,ValueError,TypeError) as error:
-        print('PAIC-06: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
-    try:
-        findings=report['_paic08_findings']
-        pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
-        for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
-        target=output.with_suffix('.PAIC-08.json')
-        with tempfile.TemporaryDirectory(prefix='.paic08-',dir=output.parent) as directory:
-            temporary=Path(directory)/target.name
-            temporary.write_text(json.dumps({'model':report.get('model'),'panels':len(report['panels']),
-                                             'views':findings},ensure_ascii=False,indent=2),encoding='utf-8')
-            temporary.replace(target)
-    except (OSError,ValueError,TypeError) as error:
-        print('PAIC-08: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+        if diagnostic_path is not None:
+            with tempfile.TemporaryDirectory(prefix='.cote-report-',dir=diagnostic_path.parent) as report_dir:
+                diagnostic=Path(report_dir)/diagnostic_path.name
+                diagnostic.write_text(json.dumps({'report':report,'dimensions':result,'plan':plan},ensure_ascii=False),encoding='utf-8')
+                diagnostic.replace(diagnostic_path)
+        if '_native_xml' in report:
+            verify_files(native)
+        with perf.stage('publicare_PDF'):
+            if args.no_overwrite:
+                import os
+                try:
+                    if os.name=='nt':
+                        staged.rename(output)
+                    else:
+                        os.link(staged,output)
+                except FileExistsError as exc:
+                    raise FileExistsError(f'PDF-ul a apărut între timp. Alegeți o altă destinație: {output}') from exc
+            else:
+                staged.replace(output)
+    diagnostic_base=None
+    if not args.no_paic_json:
+        from diagnostic_reports import report_base, write_report
+        try:
+            diagnostic_base=report_base(output,report.get('model'))
+            write_report(diagnostic_base,'.cote.json',{'report':report,'dimensions':result,'plan':plan},indent=None)
+        except (OSError,ValueError,TypeError) as error:
+            print('Diagnostic: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+    if diagnostic_base is not None:
+        # Validation is separate from the PDF and cannot reject a production export.
+        try:
+            from panel_validation import validate_panels
+            validation=validate_panels(report,plan)
+            write_report(diagnostic_base,'.PAIC-02.json',validation)
+        except Exception as error:
+            print('PAIC-02: raportul tehnic nu a putut fi generat: '+str(error),file=sys.stderr)
+        try:
+            findings=report['_paic03_findings']
+            pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
+            for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
+            write_report(diagnostic_base,'.PAIC-03.json',{'model':report.get('model'),'panels':len(report['panels']),
+                                                 'operations':findings})
+        except (OSError, ValueError, TypeError) as error:
+            print('PAIC-03: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+        try:
+            findings=report['_paic04_findings']
+            pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
+            for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
+            write_report(diagnostic_base,'.PAIC-04.json',{'model':report.get('model'),'panels':len(report['panels']),
+                                                 'operations':findings})
+        except (OSError,ValueError,TypeError) as error:
+            print('PAIC-04: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+        try:
+            findings=report['_paic05_findings']
+            pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
+            for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
+            write_report(diagnostic_base,'.PAIC-05.json',{'model':report.get('model'),'panels':len(report['panels']),
+                                                 'operations':findings})
+        except (OSError,ValueError,TypeError) as error:
+            print('PAIC-05: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+        try:
+            from specification import processing_report
+            write_report(diagnostic_base,'.PAIC-06.json',processing_report(report,plan))
+        except (OSError,ValueError,TypeError) as error:
+            print('PAIC-06: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+        try:
+            findings=report['_paic08_findings']
+            pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
+            for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
+            write_report(diagnostic_base,'.PAIC-08.json',{'model':report.get('model'),'panels':len(report['panels']),
+                                                 'views':findings})
+        except (OSError,ValueError,TypeError) as error:
+            print('PAIC-08: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+        try:
+            findings=report['_paic09_findings']
+            pages={c['_orthographic_id']:int(n) for n,c in plan.get('cartus_contexts',{}).items() if '_orthographic_id' in c}
+            for item in findings:item['page']=pages.get(item['subject']['id'])
+            write_report(diagnostic_base,'.PAIC-09.json',{'model':report.get('model'),'views':findings})
+        except (OSError,ValueError,TypeError) as error:
+            print('PAIC-09: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+    if diagnostic_base is not None:
+        result['diagnostic_base']=str(diagnostic_base)
+    if args.performance:
+        result['performance']={'native':native_performance,'python':perf.stop(),
+                               'python_bootstrap_seconds':round(bootstrap,6),
+                               'renderer_seconds':round(perf_counter()-_PROCESS_START,6)}
     print(json.dumps({'ok':True,'pdf':str(output),**result},ensure_ascii=False))
 
 if __name__=='__main__':main()
