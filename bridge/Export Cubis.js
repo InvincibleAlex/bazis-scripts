@@ -178,7 +178,7 @@
             if(visited%100===0&&typeof exportStatus==='function')exportStatus('Citite '+visited+' obiecte; '+rows.length+' placi si dubluri');
             var w = get(o, 'ContourWidth'), h = get(o, 'ContourHeight'), t = get(o, 'Thickness');
             var name = str(get(o, 'Name'));
-            if (num(w) && num(h) && num(t) && /\b(?:pal|blat|hdf)\b/i.test(str(get(o, 'MaterialName')).split('\r')[0])) {
+            if (num(w) && num(h) && num(t) && /\b(?:pal|blat|hdf|mdf|hpl|corian)\b/i.test(str(get(o, 'MaterialName')).split('\r')[0])) {
                 var rawW=w, rawH=h;
                 w=exportDimension(w); h=exportDimension(h);
                 var edges=edgeData(o), fibre=fibreData(o), cubis=cubisDimensions(o,w,h,edges);
@@ -195,7 +195,7 @@
                 baseRow.straturi_native.forEach(function(layer){
                     // Native face layers follow the panel contour. Bands belong
                     // to the assembled panel and must not be ordered twice.
-                    if(!/\b(?:pal|blat|hdf)\b/i.test(layer.material.split('\r')[0]))return;
+                    if(!/\b(?:pal|blat|hdf|mdf|hpl|corian)\b/i.test(layer.material.split('\r')[0]))return;
                     if(!num(layer.grosime_mm))throw Error('Grosime dublura indisponibila pentru '+baseRow.diagnostic_material.desemnare_piesa);
                     var code=baseRow.diagnostic_material.desemnare_piesa,label='Dublur\u0103 pentru '+code;
                     var lf=fibreData({TextureOrientation:layer.orientare_fibra});
