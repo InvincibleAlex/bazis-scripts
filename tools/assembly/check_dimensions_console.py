@@ -18,10 +18,10 @@ for mode in ('native_error','pdf_error','success','cancelled','deferred_output')
         calls=[]
         def render(args,console):
             calls.append(args);assert '--progress' in args
-            output.with_suffix('.cote.json').write_text('debug report')
+            Path(str(job)+'.cote.json').write_text('debug report')
             if mode in ('success','deferred_output'):output.write_bytes(b'%PDF-test')
             return type('Result',(),{'returncode':1 if mode=='pdf_error' else 0,
-                'stdout':json.dumps({'ok':True,'panels':2,'holes':3,'pages':4})})()
+                'stdout':json.dumps({'ok':True,'pdf':str(output),'panels':2,'holes':3,'pages':4})})()
         out=io.StringIO();err=io.StringIO()
         with contextlib.redirect_stdout(out),contextlib.redirect_stderr(err),patch.object(assembly_console,'run_renderer',render):
             result=assembly_console.run(job,source,None if mode=='deferred_output' else output,wait_seconds=1)
@@ -33,7 +33,7 @@ for mode in ('native_error','pdf_error','success','cancelled','deferred_output')
         assert source.exists()!=cleaned and Path(str(job)+'.state').exists()!=cleaned and Path(str(job)+'.log').exists()!=cleaned
         assert Path(str(job)+'.opened').exists()!=cleaned
         if cleaned:assert not Path(str(job)+'.output').exists()
-        if calls:assert output.with_suffix('.cote.json').exists()!=cleaned
+        if calls:assert Path(str(job)+'.cote.json').exists()!=cleaned
 print('PASS: console success, native failure, renderer failure, progress flag and temporary job cleanup')
 class FakeTTY(io.StringIO):
     def isatty(self):return True

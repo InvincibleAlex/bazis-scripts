@@ -3,3 +3,63 @@ __pycache__/
 .local/
 *.pdf
 *.assembly.json
+
+# Interpreters, dependencies and generated distribution packages
+.venv/
+venv/
+node_modules/
+dist/
+build/
+*.egg-info/
+runtime/
+.pytest_cache/
+
+# Private credentials, machine-specific configuration and editor state
+.env
+.env.*
+!.env.example
+.bazis-mcp/
+config.json
+runtime.json
+material-db-reader.json
+Parametri_cote.json
+cartus_parametri.json
+Cartus_A4_Portret_cote.json
+cartus_cote.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*.credentials.json
+*.secrets.json
+
+# Customer models, production sheets, logs and diagnostics
+*.b3d
+*.bln
+*.frw
+*.bld
+*.bdb
+*.fdb
+*.gdb
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.cote.json
+*.PAIC-*.json
+*.report.json
+*.log
+*.tmp
+*.bak
+*.state
+*.opened
+*.output
+output/
+exports/
+reports/
+backups/
+Backup scripturi/
+LOGO COMPLET*
+Thumbs.db
+Desktop.ini

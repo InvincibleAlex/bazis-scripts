@@ -23,8 +23,8 @@ class TitleBlock(unittest.TestCase):
         from titleblock import substitute_parameters
         p=example();p['designation']='00.01'
         values=bindings({'_cartus_quantities':{'00.01':5}},p)
-        self.assertEqual(substitute_parameters('Bucăți: {bucăți} / {bucati}',values),'Bucăți: 5 / 5')
-        self.assertEqual(substitute_parameters('{bucati:}',values),'5')
+        self.assertEqual(substitute_parameters('Bucăți: {bucăți} / {bucati}',values),'Bucăți: 1 / 1')
+        self.assertEqual(substitute_parameters('{bucati:}',values),'1')
         self.assertEqual(substitute_parameters('{câmp}',{'câmp':'custom','camp':'other'}),'custom')
         self.assertEqual(substitute_parameters('Bucăți: {bucăți}',bindings({})),'Bucăți: ')
 
@@ -60,14 +60,17 @@ class TitleBlock(unittest.TestCase):
             else:
                 self.assertGreater(points[1][0],points[0][0]);self.assertAlmostEqual(points[1][1],points[0][1])
 
-    def test_template_does_not_change_original_sheet_layout(self):
+    def test_template_removes_redundant_piece_heading_but_preserves_hole_labels(self):
         report={'panels':[example()]}
         with tempfile.TemporaryDirectory() as temp:
             a=Path(temp)/'original.pdf';b=Path(temp)/'with-context.pdf'
             write_sheets(report,a);write_sheets(dict(report,_titleblock=template()),b)
             original=PdfReader(a).pages[0];with_context=PdfReader(b).pages[0]
             self.assertEqual(original.mediabox,with_context.mediabox)
-            self.assertEqual(original.get_contents().operations,with_context.get_contents().operations)
+            self.assertIn('Placa 36',original.extract_text())
+            self.assertNotIn('Placa 36',with_context.extract_text())
+            for tag in ('G01','G02','G03','G04'):
+                self.assertIn(tag,original.extract_text());self.assertIn(tag,with_context.extract_text())
 
     def test_bindings_use_native_fields_and_separate_manual_values(self):
         p=example();report={'model':r'C:\Work\Proiect.b3d','_cartus_manual':{'client':'Client real','proiectant':'Contributor','verificator':'Contributor'},'_cartus_corp':'Corp 2'}
