@@ -1,41 +1,24 @@
-# Lucru în echipă — Contributor și Contributor
+# Contribuții și publicarea versiunilor
 
-## Surse, GitHub și producție sunt trei lucruri diferite
+## Flux Git
 
-1. Fiecare calculator are propria clonă Git locală.
-2. GitHub păstrează istoricul comun și branch-urile.
-3. Folderul partajat BAZIS conține versiunea instalată pentru utilizatori.
+1. Actualizează clona locală și verifică `git status` înainte de modificare.
+2. Creează un branch separat pentru fiecare corecție sau funcționalitate.
+3. Folosește date sintetice în teste și adresa GitHub noreply în metadatele commiturilor.
+4. Rulează verificările relevante și inspectează PDF-urile când modifici grafica.
+5. Scrie un titlu concret de commit și câteva propoziții despre problemă, soluție și verificare.
+6. Trimite un pull request către `main`.
 
-Modificarea din share nu apare automat în clone sau pe GitHub; commitul/push-ul nu publică automat în share. Repository-ul nu instalează dependențe sau configurări personale.
+## Instalare separată de surse
 
-## Flux recomandat
+GitHub și clona locală păstrează sursele; folderul de scripturi BAZIS conține versiunea instalată. Un push nu actualizează automat instalarea.
 
-- Înainte de editare: `git status`, `git fetch origin`, apoi actualizează branch-ul fără să pierzi lucrul necomis.
-- Creează branch pentru sarcină: `git switch -c fix/descriere` sau `feature/descriere`.
-- Fiecare își configurează identitatea locală cu numele propriu și adresa GitHub noreply.
-- Modifică sursele; rulează testele relevante și verifică PDF-ul când schimbi grafica.
-- Commitul are titlu concret și un corp de câteva propoziții: problema, comportamentul final și verificarea.
-- Fă push pe branch și pull request către `main`, cu același rezumat.
-- După integrare, persoana care publică face backupul versiunii instalate și copiază doar fișierele necesare.
-- Recalculează hash-urile manifestului pentru helper-ele publicate și verifică sursă versus destinație.
-- Notează versiunea/commitul publicat în jurnalul echipei; nu rula două publicări simultane.
-
-Nu edita același fișier direct în share de pe două PC-uri. Dacă o intervenție urgentă se face acolo, importă imediat schimbarea în repo într-un commit identificabil, înainte de următoarea publicare.
-
-## Exemplu de commit
-
-```text
-Corectează cantitatea din cartuș pentru coduri repetate
-
-Numără instanțele fizice desenate pe planșă în locul totalului după cod.
-Păstrează separarea pieselor cu prelucrări diferite și numerele paginilor.
-Verificare: teste pentru una/două/trei instanțe și comparație PDF.
-```
+Înainte de publicarea unui pachet, păstrează o copie locală a versiunii instalate, verifică dependențele și hash-urile și evită actualizările simultane sau în timpul unui export. Configurațiile locale nu se copiază în repository.
 
 ## Revert
 
-Folosește `git revert <commit>` pe un branch, verifică, integrează și publică din nou fișierele rezultate. Nu folosi reset hard pe istoric comun și nu presupune că revertul modifică singur pachetul instalat.
+Folosește `git revert <commit>` pe un branch, verifică rezultatul și publică separat pachetul corectat. Nu folosi reset hard pentru a rescrie istoricul comun.
 
-## Ce nu se publică
+## Confidențialitate
 
-Configurații `%USERPROFILE%/.bazis-mcp`, runtime.json de calculator, Parametri_cote.json, șablonul personal, logo, parole Firebird, modele B3D/BLN, baze de date, exporturi ale clienților și backupuri. Adaugă numai exemple generice, fără date de producție. Nu activa CI/deployment automat către LAN până când echipa nu stabilește explicit mecanismul.
+Nu adăuga fișiere excluse cu `git add -f`. Modelele, bazele de date, exporturile, logo-urile și credențialele trebuie să rămână în afara surselor. `.gitignore` nu curăță retroactiv istoricul; verifică și commiturile înaintea publicării.

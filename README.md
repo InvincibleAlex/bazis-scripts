@@ -1,44 +1,38 @@
 # BAZIS Scripts
 
-Surse și istoric pentru exporturile BAZIS Woodworker: **Cote**, **Asamblare**, **Tabele Cubis / Komodo / Holver**, editor de cartuș și integrarea MCP.
+Instrumente open source pentru automatizarea BAZIS Woodworker: export PDF cotat, documentație de asamblare, tabele pentru furnizori, editor de cartuș și integrare MCP.
 
-Proiect open source; configurațiile de calculator, credențialele, modelele clienților și exporturile nu fac parte din distribuția surselor.
+## Funcționalități
 
-## Ce găsești aici
+- Export Cote: vederi ortografice, muchii vizibile, cote, găuri, decupaje, frezări și secțiuni.
+- Export Asamblare: vederi izometrice, explozii pe module și inventar de plăci.
+- Export Tabele: generatoare pentru formatele Cubis, Komodo și Holver.
+- Cartuș configurabil prin JSON și editor HTML offline cu celule unite și parametri.
+- Distribuție Windows prin pachete portabile și foldere partajate.
+- Server MCP pentru inspectarea modelului, operații native limitate și setări salvate.
+
+## Structură
 
 | Director | Conținut |
 |---|---|
-| `bridge/` | Lansatoare JavaScript executate în BAZIS și listener MCP |
-| `tools/assembly/` | Randare PDF, cote, vederi, explozii, inventar, cartuș și verificări PAIC |
-| `tools/cubis/` | Exporturile pentru furnizori și gruparea/ordonarea pieselor |
-| `tools/cartus_editor/` | Editor HTML offline și exemple generice de cartuș |
+| `bridge/` | Lansatoare JavaScript BAZIS și listener MCP |
+| `tools/assembly/` | Generatoare PDF, geometrie, cote, cartuș și verificări |
+| `tools/cubis/` | Exporturi de tabele |
+| `tools/cartus_editor/` | Editor HTML și șabloane generice |
 | `tools/portable_dimensions/` | Construirea pachetului Python portabil |
-| `tools/portable_export/` | Pregătirea distribuției exportului de tabele |
-| `integrations/bazis_mcp/` | Server MCP Python, documentație, installer și teste |
-| `tests/` | Verificări suplimentare ale exporturilor și listenerului |
-| `docs/ISTORIC_COMMITURI.md` | Fiecare commit istoric, cu titlu, explicație și fișiere relevante |
-| `docs/LUCRU_IN_ECHIPA.md` | Clone, branch, commit, publicare și revenire |
+| `tools/portable_export/` | Distribuția exportului de tabele |
+| `integrations/bazis_mcp/` | Server MCP, instalator și documentație |
+| `tests/` | Teste și modele simulate |
 
-## Starea versiunii
+## Instalare
 
-Au fost păstrate commiturile originale și importată separat versiunea Contributor instalată pe RG, până la **PAIC-08**. Candidatul PAIC-08.1 nu este publicat ca funcție activă. Importul provine din fișierele instalate, nu reconstituie fictiv commituri individuale pentru fiecare etapă a lui Contributor.
+BAZIS Woodworker și componentele sale native se instalează separat; nu sunt distribuite aici. Pentru MCP consultă `integrations/bazis_mcp/README.md`, iar pentru pachetul PDF `tools/portable_dimensions/README.md`.
 
-Funcțiile actuale includ patru vederi ortografice generale și pe modul, muchii ascunse eliminate, legendă și secțiuni de frezare, liste generale compacte, cartuș JSON și verificări tehnice ale prelucrărilor/codurilor repetate. Coperta folosește Comandă – Nume – Articol, fără cartuș; ultima vedere generală redundantă este eliminată.
+Lansatoarele se folosesc împreună cu pachetele lor complete. Sursele nu includ interpretoarele, bibliotecile instalate sau șabloanele comerciale ale furnizorilor. Înainte de utilizare configurează căile șabloanelor și ale serverului de fișiere pentru mediul tău; unele adaptoare păstrează convențiile implementării inițiale.
 
-## Instalare și distribuție
+Editorul HTML poate fi deschis local. Folosește exemplele generice și păstrează configurația, valorile personale și logo-ul în afara repository-ului.
 
-BAZIS execută lansatoarele din folderul partajat `\\RG\Bazis\Scripts`. Acest repository este sursa versionată, nu folderul de producție. Un commit/push nu modifică automat scripturile folosite de colegi.
-
-- Export Cote: vezi `tools/portable_dimensions/README.md`; pachetul complet include runtime și biblioteci, construite separat.
-- MCP: vezi `integrations/bazis_mcp/README.md`; configurația este creată pentru profilul local de instalator.
-- Cartuș: folosește exemplele generice din editor; șablonul real, logo-ul și valorile personale rămân locale/în share.
-- Tabele: șabloanele comerciale XLSX și configurația bazei de materiale nu sunt incluse.
-
-**Nu copia sursele peste share în timpul unui export și nu publica un fișier vechi fără să preiei schimbările colegilor.**
-
-## Verificări
-
-Python Windows compatibil, cu dependențele exportului instalate sau din pachetul portabil:
+## Dezvoltare și verificare
 
 ```powershell
 python -m unittest discover -s tools/assembly -p 'check_*.py'
@@ -51,10 +45,14 @@ node integrations/bazis_mcp/tests/test_drawing_probe.cjs
 node integrations/bazis_mcp/tests/test_lifecycle_probe.cjs
 ```
 
-La importul pentru GitHub: **112 teste Python**, verificările editorului și portabilității, plus **64 verificări MCP simulate** au trecut. Testele simulate nu certifică automat execuția pe modelul live BAZIS; pentru schimbări grafice se verifică și PDF-uri randate, iar pentru producție se păstrează verificarea nativă.
+Folosește un Python compatibil cu dependențele exportului. Verificările simulate nu înlocuiesc validarea în BAZIS și inspecția PDF-urilor înaintea utilizării în producție. Verifică geometria, materialele și prelucrările pe un model de test înaintea publicării unei versiuni instalate.
 
-## Protecția datelor
+Vezi `docs/LUCRU_IN_ECHIPA.md` pentru branch-uri, commituri, actualizare și revert, respectiv `docs/ISTORIC_COMMITURI.md` pentru evoluția funcțională.
 
-`.gitignore` exclude runtime-uri, configurații, parole/certificate, modele, baze de date, PDF/XLSX/CSV, diagnostice și backupuri. Nu executa `git add -f` pentru asemenea fișiere. `.gitignore` nu șterge istoricul; acesta a fost verificat separat după tipare de secrete înainte de prima publicare. Metadatele Git păstrează autorii commiturilor istorice.
+## Date și configurații
 
-Documentația de predare din `docs/GHID_CHATGPT_RG_BAZIS.md` este o fotografie a contextului inițial; comportamentul actual și modificările Contributor sunt documentate în istoricul nou și în surse. Nu trata o descriere istorică drept specificație actuală.
+Nu publica modele ale clienților, baze de date, configurații locale, credențiale, logo-uri, exporturi sau diagnostice. Aceste categorii sunt excluse prin `.gitignore`. Exemplele și testele trebuie să utilizeze date sintetice.
+
+## Licență
+
+[MIT](LICENSE). Numele produselor și mărcile menționate aparțin deținătorilor lor; proiectul este independent și nu distribuie aplicația BAZIS.
