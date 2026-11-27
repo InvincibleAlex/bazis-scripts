@@ -11,7 +11,7 @@ const template=process.env.CUBIS_TEMPLATE||'\\\\RG\\Bazis\\Sabloane Tabel\\Cubis
 // Sablonul are randurile 2-1000 preformatate (999 piese) si 10 locuri PAL / 10 ABS in "Date client".
 const MAX_ROWS=999,MAX_PAL=10,MAX_ABS=10;
 function requireValue(ok,message){if(!ok)throw Error(message);}
-export function isPalPanel(p){return /\b(?:pal|blat)\b/i.test(String(p.material||'').split('\r')[0]);}
+export function isPalPanel(p){return /\b(?:pal|blat|hdf)\b/i.test(String(p.material||'').split('\r')[0]);}
 export function transformPanel(p){
  const name=p.diagnostic_material?.desemnare_piesa;
  requireValue(typeof name==='string'&&name.length>0,`Piesa ${p.nume}: lipseste desemnarea`);
@@ -61,7 +61,7 @@ async function main(){
   requireValue(pal.filter(v=>v===row[1]).length===1,`PAL lipsa sau duplicat in Cubis: ${row[1]}`);
   for(const sign of row.slice(6,10).filter(Boolean))requireValue(abs.filter(v=>v===sign).length===1,`ABS lipsa sau duplicat in Cubis: ${sign}`);
  }
- requireValue(rows.length>0,'Modelul nu contine panouri PAL sau blat');
+ requireValue(rows.length>0,'Modelul nu contine panouri PAL, blat sau HDF');
  // Material selectors follow first occurrence in the shared piece-code order.
  const firstSeen=new Map();rows.forEach(r=>{if(!firstSeen.has(r[1]))firstSeen.set(r[1],firstSeen.size);});
  const materials=[...firstSeen.keys()],bands=distinctBands(rows);

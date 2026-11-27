@@ -12,3 +12,14 @@ const predicate=renderer.match(/export function isPalPanel\(p\)\{[^\n]+\}/)[0].r
 vm.runInContext(predicate,context);
 assert(context.isPalPanel({material:panel.MaterialName}));assert(context.isPalPanel({material:'PAL test'}));assert(!context.isPalPanel({material:'MDF test\rBlat articol'}));assert(!context.isPalPanel({material:'MDF test'}));
 console.log('PASS: native 38 mm worktop and renderer selection include Blat without changing PAL behavior');
+
+// HDF is a sheet material, including lacquered thin boards without edge bands.
+const hdf={...panel,Name:'Spate',Designation:'HDF01',MaterialName:'HDF lăcuit, Negru U5048, 2800 x 2090 x 2,5 mm, EGGER\rU5048',Thickness:2.5};
+const hdfContext={Model:{Name:'M',Count:1,Objects:[hdf]},TextureOrientation:{None:0,Horizontal:1,Vertical:2}};
+vm.createContext(hdfContext);vm.runInContext(source.slice(start,end),hdfContext);
+assert.equal(hdfContext.rows.length,1);assert.equal(hdfContext.rows[0].grosime_mm,2.5);
+assert.equal(hdfContext.rows[0].cote_cubis.lungime_mm,100);assert.equal(hdfContext.rows[0].cote_cubis.latime_mm,50);
+assert(context.isPalPanel({material:hdf.MaterialName}));
+assert(!context.isPalPanel({material:'MDF test\rHDF article'}));
+assert(!context.isPalPanel({material:'SomethingHDF test'}));
+console.log('PASS: HDF extraction and shared supplier filter, unchanged unbanded dimensions');
