@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+import tempfile
 from decimal import Decimal,ROUND_HALF_UP
 from pathlib import Path
 from reportlab.pdfgen import canvas
@@ -62,13 +63,47 @@ def flatten(contour):
         if e.get('type')=='list':yield from flatten(e.get('contour'))
         else:yield e
 
+def clipped_groove_spans(edges,a,direction,normal,offsets,floor,length):
+    # Matching parallel edges on the floor confirm the actual material span.
+    tolerance=.001
+    rails=[]
+    for offset in offsets:
+        intervals=[]
+        for edge in edges:
+            positions=[]
+            for x,y,z in edge:
+                dx,dy=x-a[0],y-a[1]
+                if abs(z-floor)>tolerance or abs(dx*normal[0]+dy*normal[1]-offset)>tolerance:
+                    break
+                positions.append(dx*direction[0]+dy*direction[1])
+            if len(positions)!=2:continue
+            start,end=sorted(positions)
+            if start>=-tolerance and end<=length+tolerance and end-start>tolerance:
+                intervals.append((max(0,start),min(length,end)))
+        merged=[]
+        for start,end in sorted(intervals):
+            if merged and start<=merged[-1][1]+tolerance:
+                merged[-1]=(merged[-1][0],max(merged[-1][1],end))
+            else:
+                merged.append((start,end))
+        rails.append(merged)
+    if len(rails[0])!=len(rails[1]):return []
+    spans=[]
+    for left,right in zip(*rails):
+        if any(abs(x-y)>tolerance for x,y in zip(left,right)):return []
+        start,end=max(left[0],right[0]),min(left[1],right[1])
+        if end-start<=tolerance:return []
+        spans.append((start,end))
+    return spans
+
+
 def milling_for(panel,lo):
     rows=[]
-    for cut in panel.get('machining',{}).get('cuts',[]):
+    for source_index,cut in enumerate(panel.get('machining',{}).get('cuts',[])):
         params=cut.get('params') or {};trajectory=list(flatten(cut.get('trajectory')));section=list(flatten(cut.get('section')))
         row={'tag':f'F{len(rows)+1:02}','name':cut.get('properties',{}).get('Name') or params.get('Name') or 'Frezare',
             'native_type':params.get('CutType'),'depth':params.get('Depth'),'width':params.get('Width'),'offset':params.get('Offset'),
-            'trajectory':trajectory,'verified_rectangle':False}
+            'trajectory':trajectory,'source_index':source_index,'verified_rectangle':False}
         # The section coordinates describe transverse offset and panel-local Z.
         # Restrict footprint dimensions to a straight path + rectangular profile.
         if len(trajectory)==1 and trajectory[0].get('type')=='line' and len(section)==4 and all(e.get('type')=='line' for e in section):
@@ -77,16 +112,45 @@ def milling_for(panel,lo):
             sx=sorted(set(round(p[0],6) for p in pts));sz=sorted(set(round(p[1],6) for p in pts))
             axis_aligned=all(abs(xy(e['start'])[0]-xy(e['end'])[0])<1e-6 or abs(xy(e['start'])[1]-xy(e['end'])[1])<1e-6 for e in section)
             if length>0 and len(sx)==2 and len(sz)==2 and axis_aligned:
-                normal=[-dy/length,dx/length]
-                corners=[[p[0]+normal[0]*offset,p[1]+normal[1]*offset] for p,offset in [(a,sx[0]),(b,sx[0]),(b,sx[1]),(a,sx[1])]]
-                native_points=[to_local(panel,v) for edge in panel.get('edges',[]) for v in edge] if panel.get('geometry_source')=='BAZIS Edges.GVertices' else []
-                if not all(any(math.dist(q,v[:2])<.001 for v in native_points) for q in corners):
-                    row['verification_note']='Amprenta secțiunii nu coincide cu vârfurile geometriei native';rows.append(row);continue
+                direction=[dx/length,dy/length];normal=[-direction[1],direction[0]]
                 low=(panel.get('z_limits') or {}).get('LowZ',0);high=(panel.get('z_limits') or {}).get('HighZ',panel['thickness'])
                 face='Zmin' if abs(sz[0]-low)<1e-5 else 'Zmax' if abs(sz[1]-high)<1e-5 else 'profil interior'
-                row.update(verified_rectangle=True,through=sz[0]<=low+.01 and sz[1]>=high-.01,corners=corners,x=min(p[0] for p in corners)-lo[0],y=min(p[1] for p in corners)-lo[1],
-                    start=[a[0]+normal[0]*sx[0]-lo[0],a[1]+normal[1]*sx[0]-lo[1]],
-                    end=[b[0]+normal[0]*sx[0]-lo[0],b[1]+normal[1]*sx[0]-lo[1]],length=length,width=sx[1]-sx[0],profile_depth=sz[1]-sz[0],face=face)
+                # A complete native profile swept wholly outside the contour
+                # envelope cannot remove material, regardless of floor-edge evidence.
+                bounds=panel.get('local_bounds') or {}
+                if (cut['trajectory'].get('complete') and cut['section'].get('complete')
+                        and (panel.get('native_contour') or {}).get('complete')
+                        and bounds.get('min') and bounds.get('max')):
+                    profile_xy=[[p[i]+normal[i]*offset for i in range(2)] for p in (a,b) for offset in sx]
+                    lower=[min(p[i] for p in profile_xy) for i in range(2)]
+                    upper=[max(p[i] for p in profile_xy) for i in range(2)]
+                    board_min,board_max=xy(bounds['min']),xy(bounds['max'])
+                    if any(upper[i]<board_min[i]-.001 or lower[i]>board_max[i]+.001 for i in range(2)):
+                        row.update(no_effect=True,nominal_face=face,nominal_length=length,
+                                   nominal_width=sx[1]-sx[0],nominal_depth=sz[1]-sz[0],
+                                   local_footprint=dict(min=lower,max=upper))
+                        rows.append(row)
+                        continue
+                native_edges=[[to_local(panel,v) for v in edge] for edge in panel.get('edges',[]) if len(edge)==2] if panel.get('geometry_source')=='BAZIS Edges.GVertices' else []
+                def footprint(start,end):
+                    return [[p[0]+normal[0]*offset,p[1]+normal[1]*offset] for p,offset in [(start,sx[0]),(end,sx[0]),(end,sx[1]),(start,sx[1])]]
+                through=sz[0]<=low+.01 and sz[1]>=high-.01
+                floor=sz[1] if face=='Zmin' else sz[0] if face=='Zmax' else None
+                spans=clipped_groove_spans(native_edges,a,direction,normal,sx,floor,length) if floor is not None and not through else []
+                if not spans:
+                    full=footprint(a,b)
+                    if all(any(math.dist(q,v[:2])<.001 for edge in native_edges for v in edge) for q in full):
+                        spans=[(0,length)]
+                if spans:
+                    for start,end in spans:
+                        first,last=([a[i]+direction[i]*d for i in range(2)] for d in (start,end))
+                        corners=footprint(first,last)
+                        rows.append(dict(row,tag=f'F{len(rows)+1:02}',verified_rectangle=True,through=through,
+                            split=len(spans)>1,corners=corners,x=min(q[0] for q in corners)-lo[0],y=min(q[1] for q in corners)-lo[1],
+                            start=[corners[0][i]-lo[i] for i in range(2)],end=[corners[1][i]-lo[i] for i in range(2)],
+                            length=end-start,width=sx[1]-sx[0],profile_depth=sz[1]-sz[0],face=face))
+                    continue
+                row['verification_note']='Amprenta frezarii nu este confirmata de geometria nativa'
         rows.append(row)
     return rows
 
@@ -172,10 +236,13 @@ def write_dimensions(report,output,progress=None):
 def main():
     import sys
     sys.stdout.reconfigure(encoding='utf-8');sys.stderr.reconfigure(encoding='utf-8')
-    parser=argparse.ArgumentParser();parser.add_argument('--input',required=True);parser.add_argument('--output',required=True);parser.add_argument('--progress',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--input',required=True);parser.add_argument('--output',required=True);parser.add_argument('--progress',action='store_true');parser.add_argument('--diagnostic',type=Path);args=parser.parse_args()
     source=json.loads(Path(args.input).read_text(encoding='utf-8-sig'));report=source.get('report',source)
     if not report.get('panels'):raise ValueError('Nu există plăci pentru cotare')
     output=Path(args.output)
+    diagnostic_path=args.diagnostic or output.with_suffix('.cote.json')
+    if diagnostic_path.resolve() in (output.resolve(),Path(args.input).resolve()):
+        raise ValueError('Calea raportului trebuie sa fie distincta de PDF si de fisierul de intrare')
     if output.suffix.lower()!='.pdf':raise ValueError('Destinația trebuie să fie PDF')
     progress=(lambda s:print(s,file=sys.stderr,flush=True)) if args.progress else None
     from export_assembly import clean_report,make_plan
@@ -187,23 +254,107 @@ def main():
     template=load_template()
     if template:
         report['_titleblock']=template
-        from collections import Counter
-        report['_cartus_quantities']=dict(Counter(str(p.get('designation') or p['id']) for p in report['panels']))
         from titleblock import load_manual_settings
         report['_cartus_manual']=load_manual_settings()
     plan=make_plan(report)
-    pages=write_hierarchical(report,output,plan,progress=progress,dimensions=True)
-    from specification import insert_specification
-    pages+=insert_specification(report,output,plan)
-    from model_views import insert_model_views
-    pages+=insert_model_views(report,output,plan)
-    from project_legend import insert_project_legend
-    pages+=insert_project_legend(report,output,plan)
-    if template:
-        from titleblock import frame_pdf
-        frame_pdf(output,template,report,plan.get('cartus_contexts',{}))
-    result={'pages':pages,'panels':len(report['panels']),'holes':sum(len(p.get('holes',[])) for p in report['panels'])}
-    output.with_suffix('.cote.json').write_text(json.dumps({'report':report,'dimensions':result,'plan':plan},ensure_ascii=False),encoding='utf-8')
+    report['_paic03_findings']=[]
+    report['_paic04_findings']=[]
+    report['_paic05_findings']=[]
+    report['_paic06_rows']=[]
+    report['_paic08_findings']=[]
+    from bevel_sections import legend_labels
+    report['_paic04_labels']=legend_labels(report)
+    from pypdf import PdfReader
+    with tempfile.TemporaryDirectory(prefix='.cote-',dir=output.parent) as directory:
+        staged=Path(directory)/output.name
+        pages=write_hierarchical(report,staged,plan,progress=progress,dimensions=True)
+        from specification import insert_specification
+        pages+=insert_specification(report,staged,plan)
+        from model_views import insert_model_views
+        pages+=insert_model_views(report,staged,plan)
+        from project_legend import insert_project_legend
+        pages+=insert_project_legend(report,staged,plan)
+        if template:
+            from titleblock import frame_pdf
+            frame_pdf(staged,template,report,plan.get('cartus_contexts',{}),cover_without_titleblock=True)
+        result={'pages':pages,'panels':len(report['panels']),'holes':sum(len(p.get('holes',[])) for p in report['panels'])}
+        with staged.open('rb') as stream:
+            if pages<1 or len(PdfReader(stream).pages)!=pages:
+                raise ValueError('Numarul paginilor din PDF nu corespunde exportului')
+        report.pop('_paic04_labels',None)
+        with tempfile.TemporaryDirectory(prefix='.cote-report-',dir=diagnostic_path.parent) as report_dir:
+            diagnostic=Path(report_dir)/diagnostic_path.name
+            diagnostic.write_text(json.dumps({'report':report,'dimensions':result,'plan':plan},ensure_ascii=False),encoding='utf-8')
+            diagnostic.replace(diagnostic_path)
+        staged.replace(output)
+    # Validation is separate from the PDF and cannot reject a production export.
+    try:
+        from panel_validation import validate_panels
+        validation=validate_panels(report,plan)
+        target=output.with_suffix('.PAIC-02.json')
+        with tempfile.TemporaryDirectory(prefix='.paic02-',dir=output.parent) as directory:
+            temporary=Path(directory)/target.name
+            temporary.write_text(json.dumps(validation,ensure_ascii=False,indent=2),encoding='utf-8')
+            temporary.replace(target)
+    except Exception as error:
+        print('PAIC-02: raportul tehnic nu a putut fi generat: '+str(error),file=sys.stderr)
+    try:
+        findings=report['_paic03_findings']
+        pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
+        for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
+        target=output.with_suffix('.PAIC-03.json')
+        with tempfile.TemporaryDirectory(prefix='.paic03-',dir=output.parent) as directory:
+            temporary=Path(directory)/target.name
+            temporary.write_text(json.dumps({'model':report.get('model'),'panels':len(report['panels']),
+                                             'operations':findings},ensure_ascii=False,indent=2),encoding='utf-8')
+            temporary.replace(target)
+    except (OSError, ValueError, TypeError) as error:
+        print('PAIC-03: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+    try:
+        findings=report['_paic04_findings']
+        pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
+        for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
+        target=output.with_suffix('.PAIC-04.json')
+        with tempfile.TemporaryDirectory(prefix='.paic04-',dir=output.parent) as directory:
+            temporary=Path(directory)/target.name
+            temporary.write_text(json.dumps({'model':report.get('model'),'panels':len(report['panels']),
+                                             'operations':findings},ensure_ascii=False,indent=2),encoding='utf-8')
+            temporary.replace(target)
+    except (OSError,ValueError,TypeError) as error:
+        print('PAIC-04: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+    try:
+        findings=report['_paic05_findings']
+        pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
+        for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
+        target=output.with_suffix('.PAIC-05.json')
+        with tempfile.TemporaryDirectory(prefix='.paic05-',dir=output.parent) as directory:
+            temporary=Path(directory)/target.name
+            temporary.write_text(json.dumps({'model':report.get('model'),'panels':len(report['panels']),
+                                             'operations':findings},ensure_ascii=False,indent=2),encoding='utf-8')
+            temporary.replace(target)
+    except (OSError,ValueError,TypeError) as error:
+        print('PAIC-05: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+    try:
+        from specification import processing_report
+        target=output.with_suffix('.PAIC-06.json')
+        with tempfile.TemporaryDirectory(prefix='.paic06-',dir=output.parent) as directory:
+            temporary=Path(directory)/target.name
+            temporary.write_text(json.dumps(processing_report(report,plan),ensure_ascii=False,indent=2),encoding='utf8')
+            temporary.replace(target)
+    except (OSError,ValueError,TypeError) as error:
+        print('PAIC-06: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
+    try:
+        findings=report['_paic08_findings']
+        pages_by_plate={str(c['placa']):int(n) for n,c in plan.get('cartus_contexts',{}).items() if c.get('placa')}
+        for item in findings:item['page']=pages_by_plate.get(str(item.get('plate')))
+        target=output.with_suffix('.PAIC-08.json')
+        with tempfile.TemporaryDirectory(prefix='.paic08-',dir=output.parent) as directory:
+            temporary=Path(directory)/target.name
+            temporary.write_text(json.dumps({'model':report.get('model'),'panels':len(report['panels']),
+                                             'views':findings},ensure_ascii=False,indent=2),encoding='utf-8')
+            temporary.replace(target)
+    except (OSError,ValueError,TypeError) as error:
+        print('PAIC-08: raportul nu a putut fi salvat: '+str(error),file=sys.stderr)
     print(json.dumps({'ok':True,'pdf':str(output),**result},ensure_ascii=False))
 
 if __name__=='__main__':main()

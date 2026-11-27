@@ -43,7 +43,32 @@ def merge_opposite_coordinates(sides):
     return sides
 
 
-def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
+def contour_recesses(paths,convert,width,height):
+    """Find excursions that leave and return to the same outer bounding side."""
+    result=[]
+    tolerance=.01
+    for path in paths:
+        points=[convert(p) for p in path[:-1]]
+        for side,axis,edge in [('bottom',0,0),('top',0,height),('left',1,0),('right',1,width)]:
+            normal=1-axis
+            extent=(width,height)[axis]
+            normal_extent=(width,height)[normal]
+            contacts=[i for i,q in enumerate(points) if abs(q[normal]-edge)<=tolerance]
+            if len(contacts)<2:continue
+            for first,last in zip(contacts,contacts[1:]+[contacts[0]+len(points)]):
+                if last-first<2:continue
+                excursion=[points[i%len(points)] for i in range(first,last+1)]
+                start,end=sorted((excursion[0][axis],excursion[-1][axis]))
+                if end-start<=tolerance:continue
+                inner=excursion[1:-1]
+                if any(q[axis]<=tolerance or q[axis]>=extent-tolerance
+                       or abs(q[normal]-(normal_extent-edge))<=tolerance for q in inner):continue
+                deepest=max(inner,key=lambda q:abs(q[normal]-edge))
+                result.append(dict(side=side,axis=axis,edge=edge,start=start,end=end,deepest=deepest,points=excursion))
+    return result
+
+
+def nearest_dimension_sides(holes,outer,convert,width,height,contour_color,recesses=()):
     result={side:[] for side in ['bottom','top','left','right']}
     contour_points=[convert(q) for q in outer]
     points=[(convert(h['position']),h['color'],'hole') for h in holes]
@@ -56,21 +81,39 @@ def nearest_dimension_sides(holes,outer,convert,width,height,contour_color):
     for side,entries in result.items():
         hole_values=[value for value,_,source in entries if source=='hole']
         result[side]=[entry for entry in entries if entry[2]!='contour' or any(abs(entry[0]-value)<=.01 for value in hole_values)]
+    def remaining_on_axis(axis):
+        recess_points=[q for recess in recesses if recess['axis']==axis for q in recess['points']]
+        return [q for q in contour_points if not any(math.dist(q,r)<=.01 for r in recess_points)]
+
+    chains={}
+
+    for side in result:
+        openings=[r for r in recesses if r['side']==side]
+        if not openings:continue
+        extent=(width,height)[openings[0]['axis']]
+        values=[0,extent]+[value for r in openings for value in (r['start'],r['end'])]
+        chains[side]=values
     for axis,extent,side in [(0,width,'bottom'),(1,height,'left')]:
+        remaining=remaining_on_axis(axis)
         values=[]
-        for value in sorted(q[axis] for q in contour_points):
+        for value in sorted(q[axis] for q in remaining):
             if not values or value-values[-1]>.01:values.append(value)
         if len(values)<3:continue  # A rectangle needs only its overall size.
         normal_extent=height if axis==0 else width
-        feature=[q[axis^1] for q in contour_points if .01<q[axis]<extent-.01]
+        feature=[q[axis^1] for q in remaining if .01<q[axis]<extent-.01]
         if feature and min(abs(normal_extent-v) for v in feature)<min(abs(v) for v in feature):
             side='top' if axis==0 else 'right'
-        for start,end in zip(values,values[1:]):
+        chains.setdefault(side,[]).extend(values)
+    for side,values in chains.items():
+        stations=[]
+        for value in sorted(values):
+            if not stations or value-stations[-1]>.01:stations.append(value)
+        for start,end in zip(stations,stations[1:]):
             result[side].append((end,contour_color,'step:'+str(start)))
     return merge_opposite_coordinates(result)
 
 
-def dimension_envelope(sides,cuts,bands):
+def dimension_envelope(sides,cuts,bands,overall_reference=None):
     extents={}
     for side,entries in sides.items():
         rails=len(grouped_coordinates([entry for entry in entries if len(entry)<3 or not entry[2].startswith('step:')]))+int(any(len(entry)>2 and entry[2].startswith('step:') for entry in entries))
@@ -78,13 +121,18 @@ def dimension_envelope(sides,cuts,bands):
     if cuts:
         extents['top']=max(extents['top'],23+20*(len(cuts)-1))
         extents['right']=max(extents['right'],25+20*(len(cuts)-1))
+    split_count=sum(bool(cut.get('split')) for cut in cuts)
+    split_rails={side:extents[side] for side in ('top','right')}
+    for side in split_rails:
+        extents[side]+=36*split_count
     overall={'bottom':extents['bottom']+DIMENSION_STEP+5,'left':extents['left']+DIMENSION_STEP+5}
-    overall_sides={'x':'top' if any(len(e)>2 and e[2].startswith('step:') for e in sides['top']) else 'bottom',
-                   'y':'right' if any(len(e)>2 and e[2].startswith('step:') for e in sides['right']) else 'left'}
+    reference=sides if overall_reference is None else overall_reference
+    overall_sides={'x':'top' if any(len(e)>2 and e[2].startswith('step:') for e in reference['top']) else 'bottom',
+                   'y':'right' if any(len(e)>2 and e[2].startswith('step:') for e in reference['right']) else 'left'}
     for side in overall_sides.values():overall[side]=extents[side]+DIMENSION_STEP+5
     extents.update(overall)
     margins={side:max(value+18,45 if bands else 18) for side,value in extents.items()}
-    return {'margins':margins,'overall':overall,'extents':extents,'overall_sides':overall_sides}
+    return {'margins':margins,'overall':overall,'extents':extents,'overall_sides':overall_sides,'split_rails':split_rails}
 
 
 def flow_coordinate_tables(groups,top,bottom,measure,row_height=10):

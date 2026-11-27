@@ -3,7 +3,7 @@ import math
 from reportlab.lib.units import mm
 from dimension_sections import cross_section,section_label,draw_detail,draw_section_mark,DETAIL_WIDTH,DETAIL_HEIGHT,DETAIL_GAP,SECTIONS_PER_PAGE
 from dimension_annotations import AnnotationLayout
-from dimension_page_layout import PADDING,DIMENSION_STEP,DIMENSION_START,grouped_coordinates,nearest_dimension_sides,dimension_envelope,flow_coordinate_tables,fit_view_regions
+from dimension_page_layout import PADDING,DIMENSION_STEP,DIMENSION_START,grouped_coordinates,nearest_dimension_sides,contour_recesses,dimension_envelope,flow_coordinate_tables,fit_view_regions
 from pathlib import Path
 from assembly_fonts import register_body_font
 from reportlab.pdfgen import canvas
@@ -249,14 +249,15 @@ def polygon_side_dimensions(c,loop,convert,project):
 
 
 def annotate_loop(c,loop,convert,project,width,height,index):
-    pts=[convert(p) for p in loop['points']];mn=[min(p[i] for p in pts) for i in range(2)];mx=[max(p[i] for p in pts) for i in range(2)]
+    pts=[convert(p) for p in loop.get('extrema',loop['points'])];mn=[min(p[i] for p in pts) for i in range(2)];mx=[max(p[i] for p in pts) for i in range(2)]
     center=[(mn[i]+mx[i])/2 for i in range(2)];cx,cy=project(center)
     c.setFillColor(THROUGH);c.setFont('Body',7)
     start,end=project(mn),project(mx);span_x=end[0]-start[0];span_y=end[1]-start[1]
     label_x=fmt(mx[0]-mn[0]);label_y=fmt(mx[1]-mn[1])
     fits=span_x>=pdfmetrics.stringWidth(label_x,'Body',7)+12 and span_y>=pdfmetrics.stringWidth(label_y,'Body',7)+18
     tag_y=end[1]+6 if fits else end[1]+29
-    c.annotation_layout.draw(c,start[0]+4,tag_y,'D'+str(index))
+    tag_anchor=min((project(convert(q)) for q in loop['points']),key=lambda q:math.dist(q,(start[0]+4,tag_y)))
+    c.annotation_layout.draw(c,start[0]+4,tag_y,'D'+str(index),marker='decupaj',marker_anchor=tag_anchor)
     if len(loop['elements'])==1 and loop['elements'][0]['type']=='circle':
         radius=loop['elements'][0]['radius'];label='Ø '+fmt(radius*2)
         inside=span_x>=pdfmetrics.stringWidth(label,'Body',7)+12 and span_y>=20
@@ -266,12 +267,62 @@ def annotate_loop(c,loop,convert,project,width,height,index):
     else:
         dimension(c,project([mn[0],center[1]]),project([mx[0],center[1]]),cy-span_y*.25 if fits else end[1]+14,label_x,color=THROUGH)
         dimension(c,project([center[0],mn[1]]),project([center[0],mx[1]]),cx+span_x*.25 if fits else end[0]+16,label_y,True,color=THROUGH)
-    # Position dimensions terminate on the opening boundary, never on its axis.
+    if loop.get('technological') and len(loop['elements'])==1 and loop['elements'][0]['type']=='circle':
+        # A technology circle is located by its native center on both axes.
+        edge_x=0 if center[0]<width-center[0] else width
+        edge_y=0 if center[1]<height-center[1] else height
+        dimension(c,project([edge_x,center[1]]),project(center),cy-13,fmt(abs(edge_x-center[0])),color=THROUGH)
+        dimension(c,project([center[0],edge_y]),project(center),cx+13,fmt(abs(edge_y-center[1])),True,color=THROUGH)
+        return
+    # Preserve the established boundary dimensions on original contour cutouts.
     edge_x=0 if mn[0]<width-mx[0] else width;value_x=mn[0] if edge_x==0 else mx[0]
     edge_y=0 if mn[1]<height-mx[1] else height;value_y=mn[1] if edge_y==0 else mx[1]
     dimension(c,project([edge_x,center[1]]),project([value_x,center[1]]),cy-13,fmt(abs(edge_x-value_x)),color=THROUGH)
     dimension(c,project([center[0],edge_y]),project([center[0],value_y]),cx+13,fmt(abs(edge_y-value_y)),True,color=THROUGH)
 
+
+
+def annotate_round_contours(c,contour,loops,native):
+    layout=c.annotation_layout
+    sources=[(list(flatten(contour)),False)]
+    sources.extend((loop['elements'],loop['interior']) for loop in loops)
+    marks={}
+    for elements,interior in sources:
+        for element in elements:
+            kind=element.get('type')
+            if kind not in ('arc','circle'):continue
+            center=xy(element['center'])
+            points=sampled(element)
+            middle=points[len(points)//2]
+            radius=element['radius'] if kind=='circle' else math.dist(center,xy(element['start']))
+            if radius<=0 or not math.isfinite(radius):continue
+            def key_point(p):return tuple(round(v,4) for v in p)
+            identity=(kind,key_point(center),round(radius,4))
+            if kind=='arc':
+                ends=sorted([key_point(points[0]),key_point(points[-1])])
+                n=len(points)
+                mid=(points[n//2] if n%2 else [(points[n//2-1][i]+points[n//2][i])/2 for i in range(2)])
+                identity+=(*ends,key_point(mid))
+            if identity not in marks or interior:
+                marks[identity]=(kind,center,middle,radius,interior)
+    if not marks:return
+    for elements,_ in sources:
+        for element in elements:
+            points=sampled(element)
+            for start,end in zip(points,points[1:]):
+                layout.add_stroke(c,native(start),native(end))
+    c.saveState();c.setFont('Body',7)
+    for kind,center,middle,radius,interior in marks.values():
+        color=THROUGH if interior else INK
+        c.setStrokeColor(color);c.setFillColor(color)
+        target=native(middle);origin=native(center)
+        dx,dy=(target[i]-origin[i] for i in range(2))
+        length=math.hypot(dx,dy)
+        if length<1e-8:continue
+        label=('D '+fmt(2*radius)) if kind=='circle' else ('R '+fmt(radius))
+        layout.draw(c,target[0]+18*dx/length,target[1]+18*dy/length,label,
+                    centered=True,target=target,avoid_strokes=True)
+    c.restoreState()
 
 
 def aligned_dimension(c,a,b,offset,label,color):
@@ -330,10 +381,15 @@ def draw_hidden_machining(c,holes,cuts,back,convert,project):
     c.restoreState()
 
 
-def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right):
-    visible=[cut for cut in cuts if cut.get('through') or cut.get('face')==('Zmin' if back else 'Zmax') or cut.get('face') not in ('Zmin','Zmax')]
+def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right,split_rails=None):
+    from bevel_sections import draw_bevel_path
+    visible=[cut for cut in cuts if not cut.get('no_effect') and not cut.get('duplicate_bevel') and (cut.get('bevel') or cut.get('through') or cut.get('face')==('Zmin' if back else 'Zmax') or cut.get('face') not in ('Zmin','Zmax'))]
+    split_index=0
     for index,cut in enumerate(visible):
         c.setStrokeColor(MILL);c.setFillColor(MILL);c.setLineWidth(.25);c.setFont('Body',7)
+        if cut.get('bevel'):
+            draw_bevel_path(c,cut['bevel'],back,convert,project,MILL)
+            continue
         if not cut['verified_rectangle']:
             c.setDash(3,2)
             for e in cut['trajectory']:curve(c,e,lambda p:project(convert(p)))
@@ -345,6 +401,12 @@ def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
         cx,cy=project([(mn[0]+mx[0])/2,(mn[1]+mx[1])/2])
         vertical=abs(mx[1]-mn[1]-cut['length'])<.001
         horizontal=abs(mx[0]-mn[0]-cut['length'])<.001
+        top_rail,right_rail=top,right
+        if cut.get('split') and split_rails:
+            top_rail+=split_rails['top']+36*split_index
+            right_rail+=split_rails['right']+36*split_index
+            index=0
+            split_index+=1
         if not vertical and not horizontal:
             aligned_dimension(c,project(pts[0]),project(pts[1]),14,'L '+fmt(cut['length']),MILL)
             if not cut.get('section_detail'):aligned_dimension(c,project(pts[1]),project(pts[2]),12,'l '+fmt(cut['width']),MILL)
@@ -354,16 +416,16 @@ def draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
             aligned_dimension(c,project(q),project(corner),12,fmt(distance),MILL)
         elif vertical:
             edge=0 if mn[0]<width-mx[0] else width;boundary=mn[0] if edge==0 else mx[0]
-            dimension(c,project([edge,height]),project([boundary,height]),top+12+index*20,fmt(abs(edge-boundary)),color=MILL)
-            if not cut.get('section_detail'):dimension(c,project([mn[0],height]),project([mx[0],height]),top+23+index*20,'l '+fmt(cut['width']),color=MILL)
-            if mn[1]>.001:dimension(c,project([width,0]),project([width,mn[1]]),right+12,fmt(mn[1]),True,color=MILL)
-            if cut['length']<height-.001:dimension(c,project([width,mn[1]]),project([width,mx[1]]),right+25,'L '+fmt(cut['length']),True,color=MILL)
+            dimension(c,project([edge,height]),project([boundary,height]),top_rail+12+index*20,fmt(abs(edge-boundary)),color=MILL)
+            if not cut.get('section_detail'):dimension(c,project([mn[0],height]),project([mx[0],height]),top_rail+23+index*20,'l '+fmt(cut['width']),color=MILL)
+            if mn[1]>.001:dimension(c,project([width,0]),project([width,mn[1]]),right_rail+12,fmt(mn[1]),True,color=MILL)
+            if cut['length']<height-.001:dimension(c,project([width,mn[1]]),project([width,mx[1]]),right_rail+25,'L '+fmt(cut['length']),True,color=MILL)
         else:
             edge=0 if mn[1]<height-mx[1] else height;boundary=mn[1] if edge==0 else mx[1]
-            dimension(c,project([width,edge]),project([width,boundary]),right+12+index*20,fmt(abs(edge-boundary)),True,color=MILL)
-            if not cut.get('section_detail'):dimension(c,project([width,mn[1]]),project([width,mx[1]]),right+23+index*20,'l '+fmt(cut['width']),True,color=MILL)
-            if mn[0]>.001:dimension(c,project([0,height]),project([mn[0],height]),top+12,fmt(mn[0]),color=MILL)
-            if cut['length']<width-.001:dimension(c,project([mn[0],height]),project([mx[0],height]),top+25,'L '+fmt(cut['length']),color=MILL)
+            dimension(c,project([width,edge]),project([width,boundary]),right_rail+12+index*20,fmt(abs(edge-boundary)),True,color=MILL)
+            if not cut.get('section_detail'):dimension(c,project([width,mn[1]]),project([width,mx[1]]),right_rail+23+index*20,'l '+fmt(cut['width']),True,color=MILL)
+            if mn[0]>.001:dimension(c,project([0,height]),project([mn[0],height]),top_rail+12,fmt(mn[0]),color=MILL)
+            if cut['length']<width-.001:dimension(c,project([mn[0],height]),project([mx[0],height]),top_rail+25,'L '+fmt(cut['length']),color=MILL)
     return visible
 
 
@@ -403,7 +465,7 @@ def draw_band_marker(c,label,center,target):
     c.setFillColor(INK);c.setFont('Body',7);c.drawCentredString(center[0],center[1]-2.4,str(label));c.restoreState()
 
 
-def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False,single=False,has_sections=False,placement=None,side_entries=None,envelope=None):
+def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=False,single=False,has_sections=False,placement=None,side_entries=None,envelope=None,recesses=None,cleanup_report=None,output_scale=1):
     width,height=hi[0]-lo[0],hi[1]-lo[1];convert,vector,flip=view_transform(lo,hi,back,long_horizontal=not single)
     if not single and height>width:width,height=height,width
     if placement is None:
@@ -413,6 +475,7 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     project=lambda p:(left+p[0]*scale,bottom+p[1]*scale)
     native=lambda p:project(convert(p))
     c.annotation_layout=AnnotationLayout(placement['bounds'])
+    if cleanup_report is not None:c.annotation_layout.start_cleanup()
     if contour:
         c.setStrokeColor(INK);c.setLineWidth(.25)
         for e in flatten(contour):curve(c,e,native)
@@ -426,11 +489,15 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
     # Contour vertices are located from the view origin, with common coordinates stacked once.
     outer=[xy(e[key]) for loop in loops if not loop['interior'] for e in loop['elements'] for key in ['start','end'] if key in e]
     draw_hidden_machining(c,holes,cuts,back,convert,project)
-    visible=face_holes(holes,back);positions=[]
+    visible=face_holes(holes,back);positions=[];round_mark_obstacles=[]
     for h in visible:
         q=convert(h['position']);a=project(q);d=vector(h['direction']);color=h['color'];r=(h['diameter'] or 0)*scale/2
         c.setStrokeColor(color);c.setFillColor(color);c.setLineWidth(.25)
-        if h['face'].startswith('Z'):c.circle(*a,max(r,.65),stroke=1,fill=0)
+        if h['face'].startswith('Z'):
+            circle_radius=max(r,.65)
+            c.circle(*a,circle_radius,stroke=1,fill=0)
+            ring=[(a[0]+circle_radius*math.cos(i*math.tau/16),a[1]+circle_radius*math.sin(i*math.tau/16)) for i in range(16)]
+            round_mark_obstacles.extend(zip(ring,ring[1:]+ring[:1]))
         else:
             # Native drill axis and diameter define the plan-view slot into the edge.
             length=h['depth'] or 0;norm=math.hypot(d[0],d[1]);n=[-d[1]/norm,d[0]/norm] if norm else [0,1]
@@ -440,18 +507,28 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
             path=c.beginPath();path.moveTo(*project(pts[0]))
             for pt in pts[1:]:path.lineTo(*project(pt))
             path.close();c.setDash(2,1);c.drawPath(path);c.setDash()
-            c.line(*a,*project([q[0]+d[0]*length,q[1]+d[1]*length]))
-        c.line(a[0]-2,a[1],a[0]+2,a[1]);c.line(a[0],a[1]-2,a[0],a[1]+2)
+            tip=project([q[0]+d[0]*length,q[1]+d[1]*length])
+            c.line(*a,*tip)
+            slot=[project(pt) for pt in pts]
+            round_mark_obstacles.extend(zip(slot,slot[1:]+slot[:1]))
+            round_mark_obstacles.append((a,tip))
+        cross=[((a[0]-2,a[1]),(a[0]+2,a[1])),((a[0],a[1]-2),(a[0],a[1]+2))]
+        for start,end in cross:c.line(*start,*end)
+        round_mark_obstacles.extend(cross)
         positions.append((h,q,a))
     for h,q,a in sorted(positions,key=lambda item:(-item[1][1],item[1][0])):
         c.setFont('Body',6);c.setFillColor(h['color']);c.setStrokeColor(h['color'])
-        c.annotation_layout.draw(c,a[0]+5,a[1]+5,h['tag'],target=a)
-    side_entries=side_entries or nearest_dimension_sides(visible,outer,convert,width,height,CONTOUR)
-    envelope=envelope or dimension_envelope(side_entries,cuts,bands)
+        c.annotation_layout.draw(c,a[0]+5,a[1]+5,h['tag'],target=a,marker='gaură')
+    if recesses is None:
+        recesses=contour_recesses([loop['points'] for loop in loops if not loop['interior']],convert,width,height)
+    side_entries=side_entries or nearest_dimension_sides(visible,outer,convert,width,height,CONTOUR,recesses)
+    if envelope is None:
+        reference=nearest_dimension_sides(visible,outer,convert,width,height,CONTOUR) if recesses else None
+        envelope=dimension_envelope(side_entries,cuts,bands,reference)
     for side,entries in side_entries.items():
         baseline_dimensions(c,project,entries,0 if side in ('top','bottom') else 1,left,bottom,side,width,height)
     for i,loop in enumerate([loop for loop in loops if loop['interior']],1):annotate_loop(c,loop,convert,project,width,height,i)
-    draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right)
+    draw_milling(c,cuts,back,convert,project,width,height,left,bottom,top,right,envelope.get('split_rails'))
     x_side=envelope.get('overall_sides',{}).get('x','bottom')
     y_side=envelope.get('overall_sides',{}).get('y','left')
     x_datum=height if x_side=='top' else 0
@@ -463,7 +540,33 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
         d=vector(grain);length=min(45,max(14,min(width,height)*scale*.3));nx,ny=-d[1],d[0]
         c.setStrokeColor(HexColor('#777777'));c.setLineWidth(.2)
         gx,gy=project([width*.5,height*.5])
-        for offset in [-3,3]:c.line(gx-d[0]*length/2+nx*offset,gy-d[1]*length/2+ny*offset,gx+d[0]*length/2+nx*offset,gy+d[1]*length/2+ny*offset)
+        def grain_lines(x,y):
+            return [((x-d[0]*length/2+nx*offset,y-d[1]*length/2+ny*offset),
+                     (x+d[0]*length/2+nx*offset,y+d[1]*length/2+ny*offset)) for offset in (-3,3)]
+        drawn_grain=grain_lines(gx,gy)
+        technological=[loop for loop in loops if loop.get('technological')]
+        if technological:
+            from technological_openings import intersects
+            def projected(loop):return [native(p) for p in loop['points']]
+            def hits(poly,lines):
+                edges=list(zip(poly,poly[1:]))
+                return any(contains(poly,a) or contains(poly,b) or any(intersects(a,b,u,v) for u,v in edges)
+                           for a,b in lines)
+            if any(hits(projected(loop),drawn_grain) for loop in technological):
+                openings=[projected(loop) for loop in loops if loop['interior']]
+                outer=[projected(loop) for loop in loops if not loop['interior']]
+                for q in range(1,10):
+                    proposals=(grain_lines(*project((x*width,y*height)))
+                               for x,y in ((.5+q/20,.5),(.5-q/20,.5),(.5,.5+q/20),(.5,.5-q/20)))
+                    replacement=next((lines for lines in proposals
+                                      if any(all(contains(poly,p) for edge in lines for p in edge) for poly in outer)
+                                      and not any(hits(poly,lines) for poly in openings)),None)
+                    if replacement:
+                        drawn_grain=replacement
+                        break
+        for start,end in drawn_grain:
+            c.line(*start,*end)
+            round_mark_obstacles.append((start,end))
     contour_elements=(contour or {}).get('elements',[])
     band_markers=[]
     for band in bands:
@@ -493,27 +596,106 @@ def draw_view(c,p,lo,hi,contour,edges,holes,cuts,loops,bands,back,base,portrait=
             if not candidates:raise ValueError('Nu există spațiu pentru reperul de cant '+band['tag'])
             marker=min(candidates,key=lambda candidate:math.dist(candidate,[xx,yy]))
         c.annotation_layout.reserve((marker[0]-8,marker[1]-8,marker[0]+8,marker[1]+8))
+        if cleanup_report is not None:
+            c.annotation_layout.fixed_shapes.append(('marcaj cant',(marker[0]-8,marker[1]-8,marker[0]+8,marker[1]+8)))
         band_markers.append(marker)
         draw_band_marker(c,band['tag'],marker,[xx,yy])
         c.annotation_layout.add_stroke(c,marker,[xx,yy])
     for cut in cuts:
-        if cut.get('face')==('Zmin' if back else 'Zmax'):draw_section_mark(c,cut,convert,project,p,loops)
+        if cut.get('bevel'):
+            if cut['bevel']['face']==('Zmin' if back else 'Zmax') or single:
+                draw_section_mark(c,cut,convert,project)
+        elif cut.get('face')==('Zmin' if back else 'Zmax'):
+            draw_section_mark(c,cut,convert,project,p,[loop for loop in loops if not loop.get('technological')])
+    for start,end in round_mark_obstacles:c.annotation_layout.add_stroke(c,start,end)
+    annotate_round_contours(c,contour,loops,native)
+    if cleanup_report is not None:
+        layout=c.annotation_layout
+        for loop in loops:
+            points=[native(q) for q in loop['points']]
+            for a,b in zip(points,points[1:]):layout.add_stroke(c,a,b)
+        if not loops:
+            for a,b in edges:layout.add_stroke(c,native(a),native(b))
+        for cut in cuts:
+            if cut.get('no_effect') or cut.get('duplicate_bevel'):continue
+            if cut.get('bevel'):
+                for a,b,z in cut['bevel']['rails']:layout.add_stroke(c,native(a),native(b))
+            elif cut.get('verified_rectangle'):
+                points=[native(q) for q in cut['corners']]
+                for a,b in zip(points,points[1:]+points[:1]):layout.add_stroke(c,a,b)
+            else:
+                for e in cut.get('trajectory',[]):
+                    points=[native(q) for q in sampled(e)]
+                    for a,b in zip(points,points[1:]):layout.add_stroke(c,a,b)
+        item=layout.cleanup(c,output_scale)
+        cleanup_report.append(dict(item,uid=p.get('uid'),code=p.get('designation'),plate=p['label'],
+                                   view='Spate' if back else 'Față'))
     c.annotation_layout=None
     return visible,convert
 
 
 def write_sheets(report,output,progress=None):
+    from technological_openings import review_openings
+    from bevel_sections import prepare_bevels
     register_body_font()
     panels=report.get('panels',[]);c=canvas.Canvas(str(output),pagesize=(PAGE_W,PAGE_H));c.setTitle('Export Cote')
+    framed=bool(report.get('_titleblock'))
     total_holes=total_cuts=0
     headers=['Nr.','X','Y','Z local','Ø','Adâncime','Tip']
     for page,original in enumerate(panels,1):
         p=dict(original,label=original.get('label',page));lo,hi,contour,edges=geometry(p)
         holes=classified_holes(p,lo);cuts=milling_for(p,lo);loops=contour_data(p);bands=native_bands(p)
         total_holes+=len(holes);total_cuts+=len(cuts)
-        for cut in cuts:cut['section_detail']=cross_section(p,cut,loops)
+        for cut in cuts:
+            cut['section_detail']=cross_section(p,cut,loops)
+            if cut.get('no_effect'):
+                status='no_effect'
+                reason='Amprenta profilului este complet în afara conturului nativ al plăcii'
+            elif cut.get('native_type')==2 and not cut['section_detail']:
+                status='unresolved'
+                reason='Geometria sau secțiunea frezării convenționale nu este confirmată complet'
+            else:
+                continue
+            source=p['machining']['cuts'][cut['source_index']]
+            finding=dict(uid=p.get('uid'),code=p.get('designation'),module=report.get('_cartus_corp'),
+                         plate=p['label'],operation=source.get('index',cut['source_index']),
+                         name=cut['name'],status=status,reason=reason)
+            if cut.get('no_effect'):
+                finding.update({key:cut[key] for key in ('nominal_face','nominal_length','nominal_width',
+                                                        'nominal_depth','local_footprint')})
+                finding['effective_length']=0
+            if '_paic05_findings' in report:report['_paic05_findings'].append(finding)
+            if progress:progress('PAIC-05 | UID '+str(p.get('uid'))+' | '+reason)
+        if p.get('machining',{}).get('cuts'):
+            try:
+                added,findings=review_openings(p,loops)
+            except (KeyError,TypeError,ValueError,ArithmeticError) as error:
+                added=[];findings=[dict(uid=p.get('uid'),id=p['id'],code=p.get('designation'),
+                                        status='unresolved',reason=str(error))]
+            for item in findings:
+                item.update(plate=p['label'],module=report.get('_cartus_corp'))
+                if progress and item['status']=='unresolved':
+                    progress('PAIC-03 | UID '+str(p.get('uid'))+' | '+str(item['reason']))
+            if '_paic03_findings' in report:report['_paic03_findings'].extend(findings)
+            loops=loops+added
+        prepare_bevels(p,cuts,loops,report)
         details=[cut for cut in cuts if cut['section_detail']]
-        for index,cut in enumerate(details):cut['section_label']=section_label(index)
+        conventional=[cut for cut in details if not cut.get('bevel')]
+        for index,cut in enumerate(conventional):
+            cut['section_label']=section_label(index)
+        used={cut['section_label'] for cut in conventional}
+        for cut in details:
+            if not cut.get('bevel'):
+                continue
+            detail=cut['bevel']
+            key=(cut['name'],*(round(detail[k],3) for k in ('thickness','width','depth')))
+            matches=report.get('_paic04_labels',{}).get(key,[])
+            label=matches[0] if len(matches)==1 and matches[0] not in used else None
+            if label is None:
+                label=next(section_label(i) for i in range(len(used)+1) if section_label(i) not in used)
+            used.add(label)
+            cut['section_label']=label
+            cut['bevel_finding'].update(section_label=label,legend_labels=matches)
         faces=selected_faces(holes,cuts);single=len(faces)==1
         portrait=single and hi[1]-lo[1]>hi[0]-lo[0]
         page_width,page_height=(842,1191) if portrait else (PAGE_W,PAGE_H)
@@ -527,14 +709,16 @@ def write_sheets(report,output,progress=None):
             width,height=hi[0]-lo[0],hi[1]-lo[1]
             if not single and height>width:width,height=height,width
             visible=face_holes(holes,back)
-            side_entries=nearest_dimension_sides(visible,outer,convert,width,height,CONTOUR)
+            recesses=contour_recesses([loop['points'] for loop in loops if not loop['interior']],convert,width,height)
+            side_entries=nearest_dimension_sides(visible,outer,convert,width,height,CONTOUR,recesses)
             visible_cuts=[cut for cut in cuts if cut.get('face')==('Zmin' if back else 'Zmax') or cut.get('face') not in ('Zmin','Zmax')]
-            envelope=dimension_envelope(side_entries,visible_cuts,bands)
+            reference=nearest_dimension_sides(visible,outer,convert,width,height,CONTOUR) if recesses else None
+            envelope=dimension_envelope(side_entries,visible_cuts,bands,reference)
             rows=[];colors=[]
             for hole in visible:
                 q=convert(hole['position']);rows.append([hole['tag'],fmt(q[0]),fmt(q[1]),fmt(hole['z']),fmt(hole['diameter']),fmt(hole['depth']),'Străp.' if hole['through'] else 'Față' if hole['face'].startswith('Z') else 'Cant'])
                 colors.append(hole['color'])
-            views.append({'back':back,'width':width,'height':height,'sides':side_entries,'envelope':envelope,'rows':rows,'colors':colors,
+            views.append({'back':back,'width':width,'height':height,'sides':side_entries,'envelope':envelope,'recesses':recesses,'rows':rows,'colors':colors,
                           'title':'Găuri - '+('Spate' if back else 'Față')+' [mm]'})
         # Fit whole tables at their original font size; only the sheet/column flow can grow.
         for attempt in range(30):
@@ -553,18 +737,29 @@ def write_sheets(report,output,progress=None):
             band_metrics=table_metrics(band_headers,band_rows,6,9,max(100,drawing_right-PADDING)) if band_rows else None
             band_top=PADDING+(sum(band_metrics[2]) if band_metrics else 0)
             drawing_bottom=band_top+20+PADDING if band_rows else PADDING
-            region=(PADDING,drawing_bottom,drawing_right,page_height-PADDING-20-PADDING)
+            drawing_top=page_height-PADDING if framed else page_height-PADDING-20-PADDING
+            region=(PADDING,drawing_bottom,drawing_right,drawing_top)
             minimum_height=sum(view['envelope']['margins']['top']+view['envelope']['margins']['bottom']+60 for view in views)+PADDING*(len(views)-1)
             if region[3]-region[1]<minimum_height:page_height+=100;continue
             placements=fit_view_regions(region,views);break
         else:raise ValueError('Nu se poate așeza integral foaia de cote fără micșorarea textului')
         c.setPageSize((page_width,page_height));c.section_labels_on_page={cut['section_label'] for cut in details}
         if progress:progress('Desen: Cotare placa '+str(p['label']))
-        c.setFillColor(INK);c.setFont('Body',6);c.drawString(PADDING,page_height-PADDING-6,f"Placa {p['label']:02} | {p.get('designation') or p['id']} | {p.get('name','')}"[:120])
-        c.setFont('Body',5);c.drawString(PADDING,page_height-PADDING-16,f"{board_fmt(hi[0]-lo[0])} × {board_fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
+        if not framed:
+            c.setFillColor(INK);c.setFont('Body',6);c.drawString(PADDING,page_height-PADDING-6,f"Placa {p['label']:02} | {p.get('designation') or p['id']} | {p.get('name','')}"[:120])
+            c.setFont('Body',5);c.drawString(PADDING,page_height-PADDING-16,f"{board_fmt(hi[0]-lo[0])} × {board_fmt(hi[1]-lo[1])} × {fmt(p['thickness'])} mm | {p.get('material','')}"[:165])
         item=(p,lo,hi,contour,edges,holes,cuts,loops,bands)
+        cleanup=report.get('_paic08_findings')
+        output_scale=1
+        if cleanup is not None and framed:
+            from titleblock import bindings,content_transform,layout
+            transform=content_transform(page_width,page_height,layout(report['_titleblock'],bindings(report,p))['bounds'])
+            output_scale=math.hypot(*transform.ctm[:2])
+        if cleanup is not None: start_cleanup=len(cleanup)
         for view,placement in zip(views,placements):
-            draw_view(c,*item,view['back'],0,portrait,single,bool(details),placement,view['sides'],view['envelope'])
+            draw_view(c,*item,view['back'],0,portrait,single,bool(details),placement,view['sides'],view['envelope'],view['recesses'],cleanup,output_scale)
+        if cleanup is not None:
+            for record in cleanup[start_cleanup:]: record['module']=report.get('_cartus_corp')
         right=page_width-PADDING
         x=right-coordinate_width
         for column in columns:

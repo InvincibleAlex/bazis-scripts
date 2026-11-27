@@ -65,26 +65,39 @@ def draw_section_mark(c,cut,convert,project,panel=None,loops=None):
                     max([q[0] for q in points]+[r[2] for r in text_boxes])+2,
                     max([q[1] for q in points]+[r[3] for r in text_boxes])+2)
                 if not layout.marker_fits(box):continue
+                if cut.get('bevel') and side!=1:continue
                 actual=cross_section(panel,cut,loops,fraction) if panel is not None else dict(section,origin=origin)
                 if not actual:continue
                 selected=(ends,tails,text_positions,d,u,box,actual,fraction);break
             if selected:break
         if selected:break
     if selected is None:
-        c.restoreState();raise ValueError('Nu există loc liber pentru marcajul secțiunii '+cut['section_label'])
+        c.restoreState()
+        if cut.get('bevel'):
+            cut['bevel_finding'].update(status='partial',reason='Spațiu insuficient pentru marcajul secțiunii')
+            return
+        raise ValueError('Nu există loc liber pentru marcajul secțiunii '+cut['section_label'])
     ends,tails,text_positions,d,u,box,actual,fraction=selected
     cut['section_detail']=actual
     layout.reserve(box);layout.section_marks.append({'label':cut['section_label'],'box':box,'fraction':fraction})
     c.setStrokeColor(INK);c.setFillColor(INK);c.setLineWidth(.25);c.setDash([4,2,1,2]);c.line(*ends[0],*ends[1]);c.setDash()
+    cleanup=hasattr(layout,'markers')
+    if cleanup:layout.cleanup_strokes.append(tuple(ends))
     for q,tail,(x,y) in zip(ends,tails,text_positions):
         c.line(*tail,*q)
         c.line(*q,q[0]-d[0]*4+u[0]*1.5,q[1]-d[1]*4+u[1]*1.5)
         c.line(*q,q[0]-d[0]*4-u[0]*1.5,q[1]-d[1]*4-u[1]*1.5)
+        if cleanup:
+            layout.cleanup_strokes.append((tail,q))
+            layout.capture(c,x,y,cut['section_label'],'secțiune',tail)
         c.drawString(x,y,cut['section_label'])
     c.restoreState()
 
 
 def draw_detail(c,cut,x,top,scale=None):
+    if cut.get('bevel'):
+        draw_bevel_detail(c,cut,x,top)
+        return
     data=cut['section_detail'];label=cut['section_label'];width=data['width'];depth=data['depth'];thickness=data['thickness']
     left,right=data['left'],data['right'];half=width/2
     if scale is None:scale=min(118/(right-left),45/thickness)
@@ -112,3 +125,46 @@ def draw_detail(c,cut,x,top,scale=None):
     dimension(c,p([half,surface]),p([half,floor]),p([right,0])[0]+10,fmt(depth),True,color=MILL)
     dimension(c,p([left,0]),p([left,thickness]),p([left,0])[0]-12,fmt(thickness),True,color=INK)
     c.annotation_layout=previous;c.restoreState()
+
+def draw_bevel_detail(c,cut,x,top):
+    data=cut['bevel']
+    width,depth,thickness=(data[k] for k in ('width','depth','thickness'))
+    (_,outer_z),(_,inner_z)=data['profile']
+    right=width*1.65
+    scale=min(118/right,40/thickness)
+    p=lambda u,z:(x+30+u*scale,top-76+z*scale)
+    remaining=[(0,0),(right,0),(right,thickness),(0,thickness)]
+    if outer_z>inner_z:
+        remaining=[(width,0),*remaining[1:],(0,outer_z),(width,inner_z)]
+        if inner_z>0:
+            remaining=[(0,inner_z),(0,0),*remaining[1:]]
+    else:
+        remaining=[*remaining[:3],(width,thickness),(width,inner_z),(0,outer_z)]
+        if inner_z<thickness:
+            remaining=[*remaining[:3],(0,thickness),(0,inner_z),*remaining[4:]]
+    c.saveState();c.setFont('Body',7);c.setFillColor(INK);c.setStrokeColor(INK);c.setLineWidth(.25)
+    label=cut['section_label']
+    c.drawString(x+30,top,label+'–'+label+'    '+fmt(data['angle'])+'°')
+    path=c.beginPath();path.moveTo(*p(*remaining[0]))
+    for vertex in remaining[1:]:path.lineTo(*p(*vertex))
+    path.close()
+    c.saveState();c.clipPath(path,stroke=0);c.setStrokeColor(HexColor('#888888'));c.setLineWidth(.15)
+    left,bottom=p(0,0)
+    for offset in range(-60,180,6):c.line(left+offset,bottom-2,left+offset+60,bottom+42)
+    c.restoreState();c.drawPath(path)
+    c.setStrokeColor(MILL);c.line(*p(0,outer_z),*p(width,inner_z))
+    c.setDash(3,2)
+    c.line(*p(0,inner_z),*p(0,outer_z));c.line(*p(0,inner_z),*p(width,inner_z))
+    c.setDash()
+    c.setFillColor(INK)
+    c.drawString(x+30,top-20,'Față')
+    c.drawString(x+30,top-87,'Spate')
+    c.setFillColor(MILL)
+    c.drawString(x+80,top-20,fmt(width)+' × '+fmt(depth)+' mm')
+    c.drawString(x+80,top-87,'G '+fmt(thickness)+' mm')
+    if thickness-depth>.001:
+        c.drawRightString(x+DETAIL_WIDTH-4,top-10,'Rest '+fmt(thickness-depth)+' mm')
+    xx,yy=p(right,thickness/2)
+    c.setStrokeColor(INK);c.setFillColorRGB(1,1,1);c.rect(xx-2,yy-5,4,10,stroke=0,fill=1)
+    c.line(xx,yy-6,xx-2,yy-2);c.line(xx-2,yy-2,xx+2,yy+2);c.line(xx+2,yy+2,xx,yy+6)
+    c.restoreState()

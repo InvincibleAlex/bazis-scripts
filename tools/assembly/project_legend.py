@@ -1,5 +1,4 @@
 """Project-wide colour key and unique native milling cross sections."""
-import json
 import tempfile
 from pathlib import Path
 from pypdf import PdfReader,PdfWriter
@@ -13,52 +12,90 @@ from dimension_sheets import FACE,THROUGH,EDGE,MILL,INK,contour_data,sampled
 from dimension_sections import cross_section,draw_detail,section_label
 
 
+def profile_geometry(profile,low,high,planar):
+    lines=[sampled(e) for e in profile]
+    lines=[line for line in lines if len(line)>1]
+    if not lines:return [],(0,0),(),None
+    points=[p for line in lines for p in line]
+    x0=min(p[0] for p in points);x1=max(p[0] for p in points)
+    y0=min(p[1] for p in points);y1=max(p[1] for p in points)
+    # Sections of the same groove from opposite faces open upwards.
+    at_bottom=abs(y0-low)<.001
+    at_top=abs(y1-high)<.001
+    bottom_only=not planar and at_bottom and not at_top
+    sections=[[(x-x0,y1-y if bottom_only else y-y0) for x,y in line] for line in lines]
+    def point_key(p):return tuple(round(v,3) for v in p)
+    key=tuple(sorted({tuple(sorted((point_key(a),point_key(b))))
+                      for line in sections for a,b in zip(line,line[1:])}))
+    if planar:placement=None
+    elif at_bottom and at_top:placement=('through',)
+    elif at_bottom or at_top:placement=('surface',)
+    else:placement=('internal',round(y0-low,3))
+    return sections,(x1-x0,y1-y0),key,placement
+
+
 def project_sections(report):
-    result=[];seen=set()
+    result={}
     for panel in report.get('panels',[]):
-        lo,_,_,_=geometry(panel)
         raw=panel.get('machining',{}).get('cuts',[])
-        for source,cut in zip(raw,milling_for(panel,lo)):
+        if not raw:continue
+        lo,_,_,_=geometry(panel)
+        loops=contour_data(panel)
+        thickness=panel['thickness']
+        limits=panel.get('z_limits') or {}
+        low=limits.get('LowZ',0);high=limits.get('HighZ',low+thickness)
+        for cut in milling_for(panel,lo):
+            source=raw[cut['source_index']]
             profile=list(flatten(source.get('section')))
-            key=json.dumps([cut['name'],panel['thickness'],profile],sort_keys=True,ensure_ascii=False)
-            if key in seen:continue
-            seen.add(key)
-            detail=cross_section(panel,cut,contour_data(panel))
-            result.append({'name':cut['name'],'profile':profile,'cut':dict(cut,section_detail=detail),
-                           'thickness':panel['thickness']})
-    return result
+            trajectory=source.get('trajectory') or {}
+            depth=(source.get('properties') or {}).get('Thickness')
+            planar=bool(profile and trajectory.get('complete') and not trajectory.get('elements')
+                        and isinstance(depth,(int,float)) and abs(depth)>0)
+            lines,size,shape,placement=profile_geometry(profile,low,high,planar)
+            key=(cut['name'],round(thickness,3),planar,shape,placement,abs(depth) if planar else None)
+            detail=None if planar else cross_section(panel,cut,loops)
+            if key in result and (result[key]['cut']['section_detail'] or not detail):continue
+            result[key]={'name':cut['name'],'profile':profile,'lines':lines,'size':size,
+                         'cut':dict(cut,section_detail=detail),'thickness':thickness,
+                         'planar':planar,'through':planar and abs(depth)>=thickness-.01}
+    return sorted(result.values(),key=lambda entry:entry['planar'])
 
 
 def section_scale(entries,width):
     limits=[]
     for entry in entries:
+        if entry['planar']:continue
         detail=entry['cut']['section_detail']
         if detail:limits.extend([118/(detail['right']-detail['left']),45/detail['thickness']])
-        else:
-            points=[p for e in entry['profile'] for p in sampled(e)]
-            if points:
-                limits.extend([(width-42)/max(max(p[0] for p in points)-min(p[0] for p in points),.001),55/max(max(p[1] for p in points)-min(p[1] for p in points),.001)])
+        elif entry['lines']:
+            w,h=entry['size']
+            if w>0:limits.append((width-42)/w)
+            if h>0:limits.append(55/h)
     return min(limits,default=1)
 
 
 def draw_profile(c,entry,x,top,width,scale):
     cut=entry['cut']
     if cut['section_detail']:
-        draw_detail(c,cut,x+(width-174)/2,top,scale=scale)
+        detail=cut['section_detail']
+        draw_detail(c,cut,x+width/2-30-(detail['right']-detail['left'])*scale/2,top,scale=scale)
         return
-    segments=[sampled(e) for e in entry['profile']]
-    points=[p for line in segments for p in line]
+    lines=entry['lines']
+    w,h=entry['size']
     c.setFillColor(INK);c.setFont('Body',8)
-    c.drawCentredString(x+width/2,top,cut['section_label']+'–'+cut['section_label'])
-    if not points:
+    label=cut.get('section_label')
+    c.drawCentredString(x+width/2,top,label+'–'+label if label else 'Vedere în plan (scară separată)')
+    if not lines:
         c.setFont('Body',7);c.drawCentredString(x+width/2,top-42,'Profil nativ indisponibil')
         return
-    lo=[min(p[i] for p in points) for i in range(2)];hi=[max(p[i] for p in points) for i in range(2)]
-    ox=x+(width-(hi[0]-lo[0])*scale)/2;oy=top-75
+    if entry['planar']:
+        scale=min((width-42)/max(w,.001),55/max(h,.001))
+    ox=x+(width-w*scale)/2;oy=top-46-h*scale/2
     c.setStrokeColor(MILL);c.setLineWidth(.5)
-    for line in segments:
-        for a,b in zip(line,line[1:]):c.line(ox+(a[0]-lo[0])*scale,oy+(a[1]-lo[1])*scale,ox+(b[0]-lo[0])*scale,oy+(b[1]-lo[1])*scale)
-    c.setFont('Body',7);c.drawCentredString(x+width/2,top-90,'Profil: '+fmt(hi[0]-lo[0])+' × '+fmt(hi[1]-lo[1])+' mm')
+    for line in lines:
+        for a,b in zip(line,line[1:]):c.line(ox+a[0]*scale,oy+a[1]*scale,ox+b[0]*scale,oy+b[1]*scale)
+    caption='Decupaj străpuns: ' if entry['through'] else 'Contur: ' if entry['planar'] else 'Profil: '
+    c.setFont('Body',7);c.drawCentredString(x+width/2,top-90,caption+fmt(w)+' × '+fmt(h)+' mm')
 
 
 def write_project_legend(report,output):
@@ -101,7 +138,7 @@ def write_project_legend(report,output):
         if column==0 and y-row_height<bottom:
             c.showPage();pages+=1;heading(True);y=top-30
         x=left+column*(column_width+15)
-        entry['cut']['section_label']=section_label(index)
+        if not entry['planar']:entry['cut']['section_label']=section_label(index)
         draw_profile(c,entry,x,y,column_width,scale)
         c.setFillColor(INK);c.setFont('Body',7)
         lines=simpleSplit(entry['name'],'Body',7,column_width-8)

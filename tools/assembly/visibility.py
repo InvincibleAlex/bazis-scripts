@@ -67,3 +67,69 @@ class DepthMask:
             lo=max(0,first-.5)/(n-1);hi=min(n-1,last-.5)/(n-1)
             if hi>lo:result.append(([a[i]+lo*(b[i]-a[i]) for i in range(3)],[a[i]+hi*(b[i]-a[i]) for i in range(3)]))
         return result
+
+
+class VectorDepthMask:
+    """Clip projected edges against the actual face boundaries and depth planes."""
+    def __init__(self, point):
+        self.point=point
+        self.faces=[]
+
+    def polygon(self, vertices, holes=()):
+        outer=[self.point(v) for v in vertices]
+        if len(outer)<3:return
+        x,y=outer[0]
+        matrix=[[u-x,v-y] for u,v in outer[1:]]
+        z=depth(vertices[0])
+        slope,_,rank,_=np.linalg.lstsq(matrix,[depth(v)-z for v in vertices[1:]],rcond=None)
+        if rank<2:return
+        loops=[outer]+[[self.point(v) for v in hole] for hole in holes]
+        bounds=(min(u for u,v in outer),min(v for u,v in outer),max(u for u,v in outer),max(v for u,v in outer))
+        self.faces.append((bounds,loops,x,y,z,*map(float,slope)))
+
+    @staticmethod
+    def contains(loop,x,y):
+        inside=False
+        for (ax,ay),(bx,by) in zip(loop,loop[1:]+loop[:1]):
+            if (ay>y)!=(by>y) and x<(bx-ax)*(y-ay)/(by-ay)+ax:inside=not inside
+        return inside
+
+    def segments(self,a,b):
+        ax,ay=self.point(a);bx,by=self.point(b)
+        dx,dy=bx-ax,by-ay
+        if math.hypot(dx,dy)<1e-8:return []
+        za,zb=depth(a),depth(b)
+        xmin,xmax=sorted((ax,bx));ymin,ymax=sorted((ay,by))
+        hidden=[]
+        for (left,bottom,right,top),loops,x,y,z,sx,sy in self.faces:
+            if right<xmin or left>xmax or top<ymin or bottom>ymax:continue
+            delta=z+sx*(ax-x)+sy*(ay-y)-za-.05
+            change=sx*dx+sy*dy-(zb-za)
+            if max(delta,delta+change)<=0:continue
+            breaks=[0.,1.]
+            if change and 0<-delta/change<1:breaks.append(-delta/change)
+            for loop in loops:
+                for (ux,uy),(vx,vy) in zip(loop,loop[1:]+loop[:1]):
+                    ex,ey=vx-ux,vy-uy
+                    det=dx*ey-dy*ex
+                    if abs(det)<1e-10:continue
+                    px,py=ux-ax,uy-ay
+                    t=(px*ey-py*ex)/det
+                    cross=(px*dy-py*dx)/det
+                    if 0<t<1 and 0<=cross<=1:breaks.append(t)
+            breaks.sort()
+            for start,end in zip(breaks,breaks[1:]):
+                if end-start<1e-8:continue
+                t=(start+end)/2
+                if delta+change*t<=0:continue
+                px,py=ax+t*dx,ay+t*dy
+                if self.contains(loops[0],px,py) and not any(self.contains(hole,px,py) for hole in loops[1:]):
+                    hidden.append((start,end))
+        result=[]
+        cursor=0.
+        def at(t):return [u+(v-u)*t for u,v in zip(a,b)]
+        for start,end in sorted(hidden):
+            if start>cursor+1e-7:result.append((at(cursor),at(start)))
+            cursor=max(cursor,end)
+        if cursor<1-1e-7:result.append((at(cursor),b))
+        return result

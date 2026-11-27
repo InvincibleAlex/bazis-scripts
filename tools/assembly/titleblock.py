@@ -43,7 +43,7 @@ def load_template(explicit=None):
     return None
 
 
-def bindings(report,panel=None):
+def bindings(report,panel=None,*,represented_panels=None):
     manual=report.get('_cartus_manual',{})
     values={str(k):str(v or '') for k,v in manual.items()}
     # Older saved reports can retain an explicitly supplied client. New exports
@@ -56,9 +56,12 @@ def bindings(report,panel=None):
         from export_dimensions import geometry,fmt
         lo,hi,_,_=geometry(panel)
         code=panel.get('designation') or ''
+        # Count physical model records assigned to this sheet, independently of designation.
+        instances=(panel,) if represented_panels is None else represented_panels
+        quantity=len({instance['id'] for instance in instances})
         values.update(placa=str(panel.get('label','')),nume_placa=str(panel.get('name') or ''),cod=str(code),material=str(panel.get('material','')).split('\r')[0],
             dimensiuni=' × '.join(fmt(x) for x in [hi[0]-lo[0],hi[1]-lo[1],panel['thickness']])+' mm',
-            bucati=str(report.get('_cartus_quantities',{}).get(str(code or panel.get('id','')),1)))
+            bucati=str(quantity))
     return values
 
 
@@ -181,12 +184,16 @@ def content_transform(width,height,bounds):
     return Transformation().scale(scale).translate(x,y)
 
 
-def frame_pdf(path,template,report,contexts):
+def frame_pdf(path,template,report,contexts,*,cover_without_titleblock=False):
     reader=PdfReader(path);writer=PdfWriter();count=len(reader.pages)
     for number,page in enumerate(reader.pages,1):
         values=bindings(report);values.update(contexts.get(number,{}));values['pagina']=f'{number} / {count}'
-        model=layout(template,values);buf=BytesIO();c=canvas.Canvas(buf,pagesize=model['page_size']);draw(c,template,model);c.save();buf.seek(0)
-        result=PdfReader(buf).pages[0]
+        model=layout(template,values)
+        if number==1 and cover_without_titleblock:
+            result=writer.add_blank_page(*model['page_size'])
+        else:
+            buf=BytesIO();c=canvas.Canvas(buf,pagesize=model['page_size']);draw(c,template,model);c.save();buf.seek(0)
+            result=writer.add_page(PdfReader(buf).pages[0])
         # Treat the existing sheet as one immutable composition. Only the
         # whole landscape sheet turns; the portrait cartouche stays upright.
         width,height=float(page.mediabox.width),float(page.mediabox.height)
@@ -195,7 +202,6 @@ def frame_pdf(path,template,report,contexts):
         page.merge_page(PdfReader(footer).pages[0])
         transform=Transformation() if contexts.get(number,{}).get('_specification') else content_transform(width,height,model['bounds'])
         result.merge_transformed_page(page,transform,over=False)
-        writer.add_page(result)
     temporary=path.with_suffix('.cartus.tmp.pdf')
     with temporary.open('wb') as stream:writer.write(stream)
     temporary.replace(path)

@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.colors import black
 from reportlab.lib.units import mm
@@ -61,9 +62,31 @@ def detail_coordinates(panels,axis,lo,hi):
     return dimension_positions(values)
 
 
+def visible_dimension_chain(segments,axis,lo,hi,scale):
+    # Prefer long visible boundaries, then fit labels on a single rail.
+    candidates={}
+    for a,b in segments:
+        if abs(a[axis]-b[axis])>.01*scale:continue
+        length=abs(a[1-axis]-b[1-axis])
+        if length<8:continue
+        value=round(lo+(a[axis]+b[axis])/2/scale,2)
+        if lo<value<hi:candidates[value]=max(length,candidates.get(value,0))
+    points=[lo,hi]
+    def fits(a,b):
+        return (b-a)*scale>=max(18,stringWidth(fmt(b-a),'Body',7)+8)
+    for value in sorted(candidates,key=lambda value:(-candidates[value],value)):
+        before=max(p for p in points if p<value)
+        after=min(p for p in points if p>value)
+        if fits(before,value) and fits(value,after):points.append(value)
+    return sorted(points)
+
+
 def write_model_views(report, output,module_name=None):
     register_body_font()
-    items=[p for p in report.get('panels',[])+report.get('hardware',[])
+    panels=report.get('panels',[])
+    hardware=[p for p in report.get('hardware',[])
+              if not p.get('source_hidden') and not p.get('approximate_components')]
+    items=[p for p in panels+hardware
            if not p.get('hidden') and p.get('bounds',{}).get('min') and p.get('bounds',{}).get('max')]
     if not items: raise ValueError('Modelul nu conține geometrie pentru proiecții.')
     lo=[min(p['bounds']['min'][i] for p in items) for i in range(3)]
@@ -82,11 +105,11 @@ def write_model_views(report, output,module_name=None):
     if rotated_scale>scale:
         c.translate(right,bottom);c.rotate(90)
         region=(0,0,rh,rw);scale,views=rotated_scale,rotated_views
-    edges=[edge for p in items for edge in p.get('edges',[])]
+    hardware_ids={id(p) for p in hardware}
+    edges=[(id(p) in hardware_ids,edge) for p in items for edge in p.get('edges',[])]
     if not edges: raise ValueError('Lipsesc muchiile native ale modelului pentru proiecții.')
     from visibility import DepthMask
     faces=[face for p in report.get('panels',[]) if not p.get('hidden') for face in opaque_faces(p)]
-    dimensioned=set()
     for horizontal,vertical,x,y,title in views:
         w=(hi[horizontal]-lo[horizontal])*scale;h=(hi[vertical]-lo[vertical])*scale
         def point(p):
@@ -102,26 +125,29 @@ def write_model_views(report, output,module_name=None):
         sign=-1 if title=='Vedere din stânga' else 1
         mask=DepthMask((x-2,y-2,w+4,h+4),point,scale,depth_function=lambda p:p[axis]*sign)
         for vertices,holes in faces:mask.polygon(vertices,holes)
-        seen=set()
-        for a,b in edges:
+        seen=set();visible_panel_edges=[]
+        for is_hardware,(a,b) in edges:
+            # Pixel-sized depth slack on board outlines must not reveal recessed fittings.
+            mask.tolerance=.05 if is_hardware else .6/max(scale,1e-9)+.05
             for aa,bb in mask.segments(a,b):
                 aa,bb=point(aa),point(bb)
                 key=tuple(sorted((tuple(round(v,3) for v in aa),tuple(round(v,3) for v in bb))))
                 if key in seen or key[0]==key[1]:continue
                 seen.add(key);c.line(*aa,*bb)
+                if not is_hardware:
+                    visible_panel_edges.append(([aa[0]-x,aa[1]-y],[bb[0]-x,bb[1]-y]))
         c.setFillColor(black);c.setFont('Body',7)
         c.drawCentredString(x+w/2,y+h+9,title)
         for axis,is_vertical in ((horizontal,False),(vertical,True)):
-            if module_name and axis in dimensioned:continue
-            dimensioned.add(axis)
-            points=detail_coordinates(report['panels'],axis,lo[axis],hi[axis]) if module_name else [lo[axis],hi[axis]]
-            # Keep fine detail only when its number fits; full native board machining
-            # remains on the individual plate sheets.
+            points=visible_dimension_chain(visible_panel_edges,int(is_vertical),lo[axis],hi[axis],scale)
             chain=len(points)>2
+            if is_vertical:
+                anchor=lambda v:[x,y+(v-lo[axis])*scale]
+            else:
+                anchor=lambda v:[x+(v-lo[axis])*scale,y]
             for a,b in zip(points,points[1:]) if chain else []:
-                if (b-a)*scale<12:continue
-                first=[lo[0],lo[1],lo[2]];second=list(first);first[axis]=a;second[axis]=b
-                dimension(c,point(first),point(second),x-16 if is_vertical else y-16,fmt(b-a),vertical=is_vertical,color=black)
+                pa,pb=anchor(a),anchor(b)
+                dimension(c,pa,pb,x-16 if is_vertical else y-16,fmt(b-a),vertical=is_vertical,color=black)
             dimension(c,[x,y],[x,y+h] if is_vertical else [x+w,y],x-(34 if chain else 16) if is_vertical else y-(34 if chain else 16),fmt(hi[axis]-lo[axis]),color=black,vertical=is_vertical,overall=True)
     c.showPage();c.save()
 

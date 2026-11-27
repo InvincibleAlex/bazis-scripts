@@ -69,6 +69,7 @@
   function readContourTree(node,depth,seen){
    if(!node||depth>8||seen.indexOf(node)>=0)return null;
    var next=seen.concat([node]),out={geometry:readContour(node,0),children:[]},n=get(node,'ChildCount'),children=get(node,'Children');
+   out.child_count=typeof n==='number'?n:null;
    if(typeof n==='number'&&n>=0&&n<1000)for(var i=0;i<n;i++){var child=readContourTree(get(children,i),depth+1,next);if(child)out.children.push(child);}
    return out;
   }
@@ -165,7 +166,7 @@
   if(typeof __dirname!=='undefined')packageCandidates.push(path.join(__dirname,'Export Cote'));
   packageCandidates.push(path.join(String.fromCharCode(92,92)+'RG','Bazis','Scripts','Export Cote'));
   var packageRoot=null,missing=[];
-  var required=['runtime/python/python.exe','tools/assembly/export_dimensions.py','tools/assembly/dimensions_console.py','tools/assembly/dimension_sheets.py','tools/assembly/dimension_page_layout.py','tools/assembly/dimension_sections.py','tools/assembly/dimension_annotations.py','tools/assembly/assembly_fonts.py','tools/assembly/hierarchical.py','tools/assembly/export_assembly.py','tools/assembly/visibility.py','tools/assembly/holes.py','tools/assembly/hardware_labels.py','tools/assembly/inventory_layout.py','tools/assembly/module_repetitions.py','tools/assembly/callouts.py','runtime/python/Lib/site-packages/reportlab/__init__.py','runtime/python/Lib/site-packages/pypdf/__init__.py','runtime/python/Lib/site-packages/numpy/__init__.py','runtime/python/Lib/site-packages/PIL/__init__.py'];
+  var required=['runtime/python/python.exe','runtime/python/python312.zip','runtime/python/python312.dll','runtime/python/python312._pth','runtime/python/vcruntime140.dll','runtime/python/vcruntime140_1.dll','tools/assembly/export_dimensions.py','tools/assembly/dimensions_console.py','tools/assembly/dimension_sheets.py','tools/assembly/dimension_page_layout.py','tools/assembly/dimension_sections.py','tools/assembly/dimension_annotations.py','tools/assembly/assembly_fonts.py','tools/assembly/hierarchical.py','tools/assembly/export_assembly.py','tools/assembly/visibility.py','tools/assembly/holes.py','tools/assembly/hardware_labels.py','tools/assembly/inventory_layout.py','tools/assembly/module_repetitions.py','tools/assembly/callouts.py','tools/assembly/assembly_console.py','tools/assembly/model_views.py','tools/assembly/preparation_annotations.py','tools/assembly/project_legend.py','tools/assembly/specification.py','tools/assembly/titleblock.py','tools/assembly/panel_validation.py','tools/assembly/technological_openings.py','tools/assembly/bevel_sections.py','runtime/python/Lib/site-packages/reportlab/__init__.py','runtime/python/Lib/site-packages/pypdf/__init__.py','runtime/python/Lib/site-packages/numpy/__init__.py','runtime/python/Lib/site-packages/PIL/__init__.py'];
   for(var pc=0;pc<packageCandidates.length;pc++){
    var candidate=packageCandidates[pc],absent=required.filter(function(file){return !fs.existsSync(path.join(candidate,file));});
    if(!absent.length){packageRoot=candidate;break;}
@@ -208,7 +209,7 @@
    if(++visited>100000)throw Error('Prea multe obiecte.');
    if(visited%100===0)progress('Citire: '+visited+' obiecte; '+panels.length+' placi; '+hardware.length+' articole de feronerie');
    var id='p'+visited,name=text(get(o,'Name')),hidden=item.hidden||get(o,'Visible')===false;
-   var material=text(get(o,'MaterialName')).split('\r')[0],w=get(o,'ContourWidth'),h=get(o,'ContourHeight'),t=get(o,'Thickness');
+   var technicalMaterial=text(get(o,'MaterialName')),material=technicalMaterial.split('\r')[0],w=get(o,'ContourWidth'),h=get(o,'ContourHeight'),t=get(o,'Thickness');
    var isPanel=positive(w)&&positive(h)&&positive(t),count=get(o,'Count');
    // BAZIS Block.IsFastener() identifies composite fittings. They are atomic:
    // never recurse into panels used only to draw a purchased fitting.
@@ -233,9 +234,9 @@
    }
    nodes.push({id:id,parent:item.parent,name:name,designation:text(get(o,'Designation')),frame:objectFrame(o)});
    // Only furniture boards, excluding panels used to model fittings.
-   if(isPanel&&/\b(PAL|MDF|HDF|PFL|placaj|plywood)\b/i.test(material)){
+   if(isPanel&&/\b(PAL|MDF|HDF|PFL|placaj|plywood|Blat)\b/i.test(material)){
     progress('Placa '+visited+': '+text(get(o,'Designation'))+' | '+name);
-    var p={id:id,uid:get(o,'UID'),parent:item.parent,ancestors:item.ancestors,name:name,designation:text(get(o,'Designation')),material:material,width:w,height:h,thickness:t,frame:objectFrame(o),bounds:{min:vec(get(o,'GabMin')),max:vec(get(o,'GabMax'))},edges:[],warnings:[],machining:panelMachining(o)};
+    var p={id:id,uid:get(o,'UID'),parent:item.parent,ancestors:item.ancestors,name:name,designation:text(get(o,'Designation')),material:material,technical_material:technicalMaterial,width:w,height:h,thickness:t,frame:objectFrame(o),bounds:{min:vec(get(o,'GabMin')),max:vec(get(o,'GabMax'))},edges:[],warnings:[],machining:panelMachining(o)};
     var contour=get(o,'Contour'),n=get(contour,'Count'),objects=get(contour,'Objects');
     p.native_contour=readContour(contour,0);
     p.local_bounds={min:point2(get(contour,'Min')),max:point2(get(contour,'Max'))};
@@ -305,7 +306,7 @@
   // Native order metadata, independent of the model filename or folder name.
   var orderArticle=typeof Article!=='undefined'?Article:
    (typeof currentFileData!=='undefined'?get(currentFileData,'article'):null);
-  var order={name:text(get(orderArticle,'OrderName')).trim(),code:text(get(orderArticle,'OrderCode')).trim(),product_name:text(get(orderArticle,'Name')).trim(),source:'BAZIS Article.OrderName'};
+  var order={name:text(get(orderArticle,'OrderName')).trim(),code:text(get(orderArticle,'OrderCode')).trim(),product_name:text(get(orderArticle,'Name')).trim(),product_code:text(get(orderArticle,'Code')).trim(),source:'BAZIS Article.OrderName'};
   var report={schema:1,model:filename,order:order,nodes:nodes,panels:panels,hardware:hardware,drilling:drilling,geometry_source:'BAZIS native edges / contour extrusion / NewHoleDrilling global coordinates'};
   progress('Pregatire date pentru PDF...');
   fs.writeFileSync(input,JSON.stringify(report),'utf8');

@@ -54,7 +54,7 @@ def run_renderer(args,console):
     return subprocess.CompletedProcess(args,code,output)
 
 def run(job, source, output=None, *, wait_seconds=1800):
-    log=Path(str(job)+'.log');state=Path(str(job)+'.state');offset=0
+    log=Path(str(job)+'.log');state=Path(str(job)+'.state');diagnostic=Path(str(job)+'.cote.json');offset=0
     console=LiveConsole();success=False
     try:
         console.write('BAZIS | Export cote\n');console.start()
@@ -80,12 +80,18 @@ def run(job, source, output=None, *, wait_seconds=1800):
         console.write('\nGenerare PDF in proces separat...')
         if output is None:output=Path(Path(str(job)+'.output').read_text(encoding='utf-8'))
         result=run_renderer([sys.executable,'-u',str(Path(__file__).with_name('export_dimensions.py')),
-            '--input',str(source),'--output',str(output),'--progress'],console)
+            '--input',str(source),'--output',str(output),'--diagnostic',str(diagnostic),'--progress'],console)
         if result.returncode:raise RuntimeError('Generatorul PDF a esuat (cod %s). Vezi eroarea de mai sus.'%result.returncode)
         receipt=json.loads(result.stdout)
-        if not receipt.get('ok') or not output.is_file() or not output.stat().st_size:raise RuntimeError('PDF neconfirmat.')
+        if not isinstance(receipt,dict) or receipt.get('ok') is not True or receipt.get('pdf')!=str(output):
+            raise RuntimeError('PDF neconfirmat de renderer.')
+        panels,holes,pages=(receipt.get(key) for key in ('panels','holes','pages'))
+        if any(type(v) is not int or v<minimum for v,minimum in ((panels,1),(holes,0),(pages,1))):
+            raise RuntimeError('Confirmarea rendererului contine valori invalide.')
+        if not output.is_file() or not output.stat().st_size:
+            raise RuntimeError('Fisierul PDF lipseste sau este gol.')
+        console.write('\nTERMINAT | %s placi | %s gauri | %s pagini'%(panels,holes,pages))
         success=True
-        console.write('\nTERMINAT | %s placi | %s gauri | %s pagini'%(receipt['panels'],receipt['holes'],receipt['pages']))
         console.write('PDF: '+str(output)+'\nModelul BAZIS nu a fost modificat.')
         return 0
     except Exception as error:
@@ -94,7 +100,7 @@ def run(job, source, output=None, *, wait_seconds=1800):
     finally:
         console.stop()
         if success:
-            files=[source,log,state,Path(str(job)+'.opened'),Path(str(job)+'.output'),output.with_suffix('.cote.json')]
+            files=[source,log,state,Path(str(job)+'.opened'),Path(str(job)+'.output'),diagnostic]
             for file in files:
                 try:file.unlink(missing_ok=True)
                 except OSError as error:console.write('Fisier auxiliar pastrat: '+str(file)+' | '+str(error))

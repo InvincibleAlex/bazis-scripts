@@ -217,16 +217,30 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
             nonlocal page_count,cw,ch
             if progress:progress('Desen: '+title)
             cw,ch=(595,842) if dimensions and page_count==0 else choose_page(items) if items else (W,H);c.setPageSize((cw,ch))
-            page_count+=1;c.setFillColor(HexColor('#172b3a'));c.setFont('Body',18);c.drawString(35,ch-43,title[:80]);c.setFont('Body',9);c.drawString(35,ch-65,subtitle[:130])
-        def picture(title,group_items,subtitle=''):
+            cover=dimensions and page_count==0
+            page_count+=1
+            c.setFillColor(HexColor('#172b3a'))
+            heading=title if cover else title[:80]
+            size=min(18,18*(cw-70)/pdfmetrics.stringWidth(heading,'Body',18)) if cover and heading else 18
+            c.setFont('Body',size);c.drawString(35,ch-43,heading)
+            c.setFont('Body',9);c.drawString(35,ch-65,subtitle[:130])
+        def picture(title,group_items,subtitle='',*,precise_edges=False):
             items=[p for _,objects in group_items for p in objects];header(title,subtitle,items)
             panels=[p for p in items if p.get('kind')!='hardware'];fittings=[p for p in items if p.get('kind')=='hardware']
-            point=draw_scene(c,panels,None,[0,0,0],(35,60,cw-70,ch-150),items,hardware=fittings,hide_hidden=True)
+            point=draw_scene(c,panels,None,[0,0,0],(35,60,cw-70,ch-150),items,hardware=fittings,hide_hidden=True,precise_edges=precise_edges)
             from callouts import draw_callouts
             draw_callouts(c,[(name[:50],[p for p in objects if p.get('kind')!='hardware'] or objects) for name,objects in group_items if name],items,point,(35,60,cw-70,ch-150))
             c.showPage()
-        furniture_name=str((report.get('order') or {}).get('product_name') or '').strip() or Path(str(report.get('model','Mobilier')).replace('\\','/')).stem
-        picture(furniture_name if dimensions else 'Ansamblu | Vedere izometrică',[('',report['panels']+report.get('hardware',[]))],f'Detaliere montaj: {sample_module}' if sample_module else '')
+        order=report.get('order') or {}
+        fields=[str(order.get(key) or '').strip() for key in ('name','product_name','product_code')]
+        furniture_name=' - '.join(filter(None,fields)) or Path(str(report.get('model','Mobilier')).replace('\\','/')).stem
+        cover_hardware=report.get('hardware',[])
+        if dimensions:
+            cover_hardware=[h for h in cover_hardware
+                            if not h.get('hidden') and not h.get('source_hidden') and not h.get('approximate_components')]
+        picture(furniture_name if dimensions else 'Ansamblu | Vedere izometrică',
+                [('',report['panels']+cover_hardware)],
+                f'Detaliere montaj: {sample_module}' if sample_module else '',precise_edges=dimensions)
         packed=[]
         for group in groups:
             members=group['modules'];raw=[p for m in members for pair in [module_items(report,m)] for collection in pair for p in collection]
@@ -262,7 +276,7 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
             module_start=assembled_pages+1
             preparation_file=Path(temp)/f"prep-{module['id']}.pdf";c=canvas.Canvas(str(preparation_file),pagesize=(W,H))
             panels,fittings=views[module['id']]
-            picture(module['name']+' | Complet',[('',panels+fittings)])
+            picture(module['name']+' | Complet',[('',panels+fittings)],precise_edges=dimensions)
             picture(module['name']+' | Explozie pe subansambluri',exploded_groups(module,panels,fittings,nodes))
             carcass=[p for p in panels if p.get('parent')==module.get('structural_group_id')]
             if carcass:picture(module['name']+' | Carcasă - explozie plăci',exploded_boards(carcass,fittings))
@@ -286,7 +300,8 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
                 if report.get('_titleblock'):
                     from titleblock import bindings
                     for index,panel in enumerate(native_panels):
-                        plan['cartus_contexts'][native_start+index]=bindings(dict(report,_cartus_corp=module['name']),panel)
+                        plan['cartus_contexts'][native_start+index]=bindings(
+                            dict(report,_cartus_corp=module['name']),panel,represented_panels=(panel,))
                 fragments.append(dimensions_file)
                 assembled_pages+=sum(len(PdfReader(f).pages) for f in [preparation_file,module_views_file,body,dimensions_file])
                 module_ranges[module['id']]=(module_start,assembled_pages)
@@ -318,8 +333,9 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
             assembled_pages+=len(PdfReader(preparation_file).pages)+len(PdfReader(body).pages)
             module_ranges[module['id']]=(module_start,assembled_pages)
         plan['module_page_ranges']={key:list(value) for key,value in module_ranges.items()}
-        final_file=Path(temp)/'final.pdf';c=canvas.Canvas(str(final_file),pagesize=(W,H))
-        picture('Ansamblu complet',[('',report['panels']+report.get('hardware',[]))]);c.save();fragments.append(final_file)
+        if not dimensions:
+            final_file=Path(temp)/'final.pdf';c=canvas.Canvas(str(final_file),pagesize=(W,H))
+            picture('Ansamblu complet',[('',report['panels']+report.get('hardware',[]))]);c.save();fragments.append(final_file)
         plan['preparation_codes']={str(k):v for k,v in seen_preparation.items()}
         writer=PdfWriter()
         for p in fragments:
@@ -329,7 +345,7 @@ def write_hierarchical(report,output,plan,sample_module=None,progress=None,dimen
         total=len(writer.pages)
         for i,page in enumerate(writer.pages,1):
             if progress:progress(f'Finalizare pagina {i} / {total}')
-            if dimensions and report.get('_titleblock'):continue
+            if dimensions and (i==1 or report.get('_titleblock')):continue
             pw,ph=float(page.mediabox.width),float(page.mediabox.height)
             buf=BytesIO();overlay=canvas.Canvas(buf,pagesize=(pw,ph));overlay.setFillColorRGB(1,1,1);overlay.rect(pw-90,14,75,25,fill=1,stroke=0)
             overlay.setFillColorRGB(.4,.4,.4);overlay.setFont('Body',9);overlay.drawRightString(pw-35,24,f'{i} / {total}');overlay.save();buf.seek(0)

@@ -1,11 +1,13 @@
 """Paginated, readable model specifications preceding the unchanged drawings."""
 import json
+import math
 import re
 import tempfile
 from collections import Counter
 from pathlib import Path
+from io import BytesIO
 
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader, PdfWriter, Transformation
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -37,8 +39,155 @@ class SingleLine(Flowable):
         self.canv.drawString(0,1,self.text)
 
 
+def operation_name(cut):
+    return str(cut.get('name') or cut.get('Name') or (cut.get('properties') or {}).get('Name')
+               or (cut.get('params') or {}).get('Name') or 'Frezare')
+
+
+def contour_description(loop):
+    from technological_openings import exact_extrema
+    elements = loop['elements']
+    if len(elements)==1 and elements[0]['type']=='circle':
+        return 'Decupaj circular Ø'+fmt(2*elements[0]['radius'])+' mm'
+    if len(elements)==4 and all(e['type']=='line' for e in elements):
+        vectors = [[b-a for a,b in zip(xy(e['start']),xy(e['end']))] for e in elements]
+        lengths = [math.hypot(*v) for v in vectors]
+        if min(lengths)>.001 and all(abs(sum(a*b for a,b in zip(v,w))) <= .001*min(l,k)
+              for i,(v,l) in enumerate(zip(vectors,lengths)) for w,k in [(vectors[(i+1)%4],lengths[(i+1)%4])]):
+            long,short=sorted(lengths[:2],reverse=True)
+            shape='pătrat' if abs(long-short)<.001 else 'dreptunghiular'
+            return 'Decupaj '+shape+' '+fmt(long)+' × '+fmt(short)+' mm'
+    arcs=[e for e in elements if e['type']=='arc']
+    lines=[e for e in elements if e['type']=='line']
+    if len(arcs)==len(lines)==4 and all(elements[i]['type']!=elements[(i+1)%8]['type'] for i in range(8)):
+        radii=[math.dist(xy(e['center']),xy(e['start'])) for e in arcs]
+        if max(radii)-min(radii)<.001 and all(any(abs(a-b)<.001 for a,b in zip(xy(e['start']),xy(e['end']))) for e in lines):
+            extrema=exact_extrema(elements)
+            sides=sorted([max(p[i] for p in extrema)-min(p[i] for p in extrema) for i in range(2)],reverse=True)
+            return 'Decupaj '+fmt(sides[0])+' × '+fmt(sides[1])+' mm, R'+fmt(radii[0])
+    if len(arcs)==len(lines)==2:
+        centers=[xy(e['center']) for e in arcs]
+        radii=[math.dist(c,xy(e['start'])) for c,e in zip(centers,arcs)]
+        if abs(radii[0]-radii[1])<.001 and all(
+                math.dist([(a+b)/2 for a,b in zip(xy(e['start']),xy(e['end']))],c)<.001 for e,c in zip(arcs,centers)):
+            return 'Decupaj oval '+fmt(math.dist(*centers)+2*radii[0])+' × '+fmt(2*radii[0])+' mm'
+    return 'Decupaj poligonal' if len(lines)==len(elements) else 'Decupaj neregulat'
+
+
+def exterior_descriptions(loops, lo, hi):
+    from dimension_page_layout import contour_recesses
+    from dimension_sheets import sampled
+    def side(p):
+        return {(i,edge) for i in range(2) for edge in (lo[i],hi[i]) if abs(p[i]-edge)<.01}
+
+    for loop in (v for v in loops if not v['interior']):
+        points=loop['points']
+        recesses=contour_recesses([points],lambda q:[p-a for p,a in zip(q,lo)],hi[0]-lo[0],hi[1]-lo[1])
+        covered=set()
+        for r in recesses:
+            inner=r['points'][1:-1]
+            key={tuple(round(q[i]+lo[i],4) for i in range(2)) for q in inner}
+            if covered.intersection(key):
+                continue
+            covered.update(key)
+            width=r['end']-r['start']; depth=abs(r['deepest'][1-r['axis']]-r['edge'])
+            axis_aligned=all(any(abs(a-b)<.001 for a,b in zip(p,q)) for p,q in zip(r['points'],r['points'][1:]))
+            yield 'Crestătură '+fmt(width)+' × '+fmt(depth)+' mm' if axis_aligned else 'Decupaj deschis'
+        irregular=False
+        for e in loop['elements']:
+            q=sampled(e)
+            if not q or side(q[0]).intersection(side(q[-1])) and e['type']=='line':
+                continue
+            if any(tuple(round(v,4) for v in point) in covered for point in q):
+                continue
+            a,b=side(q[0]),side(q[-1])
+            corner=len(a)==len(b)==1 and next(iter(a))[0]!=next(iter(b))[0]
+            if corner and e['type']=='line':
+                yield 'Colț retezat'
+            elif corner and e['type']=='arc':
+                radius=math.dist(xy(e['center']),q[0])
+                yield 'Colț rotunjit R'+fmt(radius)
+            else:
+                irregular=True
+        if irregular:
+            yield 'Contur neregulat'
+
+
+def processing_index(report):
+    index={}
+    for number in (3,4,5):
+        for item in report.get(f'_paic0{number}_findings',[]):
+            uid=item.get('uid')
+            if uid is not None and 'operation' in item:
+                index.setdefault(uid,{})[item['operation']]=(number,item)
+    return index
+
+
+def processing_for(panel, lo, hi, findings):
+    from dimension_sheets import closed_loops, contour_data
+    from export_dimensions import milling_for
+    from technological_openings import same_opening
+    entries=[]
+    raw=(panel.get('machining') or {}).get('cuts',[])
+    rows={}
+    for row in milling_for(panel,lo) if raw else ():
+        rows.setdefault(row['source_index'],[]).append(row)
+    loops=contour_data(panel)
+    covered=set()
+    footprints=set()
+    openings=[]
+    for i,cut in enumerate(raw):
+        name=operation_name(cut); operation=cut.get('index',i)
+        previous, finding=findings.get(operation,(None,{}))
+        status=finding.get('status')
+        reason=finding.get('reason')
+        verified=rows.get(i,[])
+        if any(r.get('no_effect') for r in verified) or (previous==5 and status=='no_effect'):
+            result='excluded'
+            reason=reason or 'PAIC-05: amprenta este în afara materialului'
+        elif previous==4 and status=='already_drawn':
+            result='deduplicated'
+            reason='PAIC-04: aceeași geometrie fizică a frezării'
+        elif previous==3 and status in ('added','already_drawn'):
+            result='kept'
+            for candidate in closed_loops([cut.get('section')]):
+                if any(same_opening(candidate,opening) for opening in openings):
+                    result='deduplicated'
+                    reason='PAIC-03: aceeași geometrie fizică a decupajului'
+                    continue
+                openings.append(candidate)
+                for k,loop in enumerate(loops):
+                    if loop['interior'] and same_opening(candidate,loop):
+                        covered.add(k)
+                        entries.append(dict(name=contour_description(loop),status='deduplicated',operation=operation,
+                                            reason='Conturul interior coincide cu operațiunea PAIC-03',source='contur nativ'))
+        elif previous==4 and status in ('added','partial'):
+            result='kept'
+        elif any(r.get('verified_rectangle') for r in verified):
+            result='kept'
+            keys={('groove',r['face'],round(r['profile_depth'],6),tuple(sorted(tuple(round(x,6) for x in p) for p in r['corners'])))
+                  for r in verified if r.get('verified_rectangle')}
+            if keys and keys<=footprints:
+                result='deduplicated'
+                reason='Aceeași amprentă, față și adâncime confirmate'
+            footprints.update(keys)
+        else:
+            result='undetermined'
+            reason=reason or 'Efect geometric neconfirmat de validările disponibile'
+        entries.append(dict(name=name,status=result,operation=operation,reason=reason,source='BAZIS panel.Cuts'))
+    entries.extend(dict(name=contour_description(loop),status='added',source='contur interior BAZIS')
+                   for k,loop in enumerate(loops) if loop['interior'] and k not in covered)
+    entries.extend(dict(name=name,status='added',source='contur exterior BAZIS')
+                   for name in exterior_descriptions(loops,lo,hi))
+    shown=Counter(e['name'] for e in entries if e['status'] in ('kept','added','undetermined'))
+    text='; '.join(name if count==1 else f'{count} × {name}' for name,count in shown.items())
+    return text, entries
+
+
 def specification_rows(report):
-    types = {}; boards = Counter()
+    types = {}; boards = {}
+    validation=processing_index(report)
+    audit=report.get('_paic06_rows')
     for panel in sorted(report['panels'], key=lambda p: natural(p.get('designation', ''))):
         sides = {s: set() for s in ('Sus', 'Jos', 'Stânga', 'Dreapta', 'Contur')}
         bands = (panel.get('module_comparison') or {}).get('bands')
@@ -62,7 +211,8 @@ def specification_rows(report):
         abbreviations={'Sus':'S','Jos':'J','Stânga':'St','Dreapta':'Dr.','Contur':'Contur'}
         edging = ', '.join(abbreviations[side] for side, numbers in sides.items() if numbers)
         cuts = (panel.get('machining') or {}).get('cuts', [])
-        machining = '; '.join(dict.fromkeys(str(c.get('name') or c.get('Name') or (c.get('properties') or {}).get('Name') or (c.get('params') or {}).get('Name') or 'Frezare') for c in cuts))
+        machining = '; '.join(dict.fromkeys(operation_name(c) for c in cuts))
+        current,operations=processing_for(panel,lo,hi,validation.get(panel.get('uid'),{}))
         rectangular = ''
         if elements:
             rectangular = 'Da' if len(elements) == 4 and all(e.get('type') == 'line' and
@@ -73,8 +223,18 @@ def specification_rows(report):
                str(panel.get('material') or '').split('\r')[0], machining, rectangular)
         # Group only matching native manufacturing data, never code alone.
         signature = json.dumps({k: panel.get(k) for k in ('native_contour', 'machining', 'module_comparison', 'holes')}, sort_keys=True, ensure_ascii=False)
-        boards[(row, signature)] += 1
-    rows = [list(row[:2])+[str(count)]+list(row[2:]) for (row, _), count in boards.items()]
+        item=dict(uid=panel.get('uid'),id=panel.get('id'),code=row[0],before=machining,after=current,operations=operations)
+        boards.setdefault((row,signature),[]).append(item)
+    rows=[]
+    for (row,_),items in boards.items():
+        descriptions={item['after'] for item in items}
+        current=items[0]['after'] if len(descriptions)==1 else row[7]
+        for item in items:
+            if len(descriptions)>1:
+                item.update(proposed=item['after'],after=current,group_conflict=True)
+            item['row']=len(rows)+1
+        if audit is not None:audit.extend(items)
+        rows.append([*row[:2],str(len(items)),*row[2:7],current,row[8]])
     edging = [[str(number), key[0], key[1], fmt(key[2]) if key[2] is not None else ''] for key, number in types.items()]
     hardware = Counter(article_key(h) for h in report.get('hardware', []) if not h.get('hidden'))
     fittings = [[str(i), str(article or ''), name, str(count)] for i, ((name, article), count) in enumerate(sorted(hardware.items(), key=lambda item: natural(item[0][0])), 1)]
@@ -84,12 +244,21 @@ def specification_rows(report):
 def write_specification(report, output):
     register_body_font()
     size = A4; left = bottom = 10*mm; right = size[0]-10*mm; top = size[1]-10*mm
-    if report.get('_titleblock'):
+    framed=bool(report.get('_titleblock'))
+    if framed:
         from titleblock import layout, bindings
         model = layout(report['_titleblock'], bindings(report)); size = model['page_size']
         left, bottom, right, top = model['bounds']
         left += 3*mm; right -= 3*mm; bottom += 3*mm; top -= 3*mm
     width = right-left; story = []
+    page_extents = {}
+
+    class CenteredTable(Table):
+        def drawOn(self, canvas, x, y, _sW=0):
+            page_extents.setdefault(canvas.getPageNumber(), []).append((y, y+self._height))
+            super().drawOn(canvas, left+(width-self._width)/2, y)
+
+    table_type = CenteredTable if framed else Table
     definitions = [
         ('Lista plăcilor', ['Cod', 'Nume', 'Buc.', 'Lungime', 'Lățime', 'Grosime', 'Canturi', 'Material', 'Prelucrări', 'Drept.'], [24, 22, 6, 10, 10, 10, 15, 60, 27, 9]),
         ('Canturi', ['Nr.', 'Nume', 'Desemnare', 'Grosime'], [10, 70, 65, 18]),
@@ -98,9 +267,14 @@ def write_specification(report, output):
     for (heading, headers, weights), rows in zip(definitions, specification_rows(report)):
         if not rows: continue
         widths=[width*w/sum(weights) for w in weights]
+        if heading=='Lista plăcilor':
+            for item in report.get('_paic06_rows',[]):
+                text=item['after']
+                if len(text)>0 and stringWidth(' '.join(text.split()),'Body',5.5)>widths[8]-4:
+                    item['text_fit']='Celula folosește încadrarea proporțională existentă'
         data = [[SingleLine(cell,widths[i]-4) for i,cell in enumerate(row)] for row in [headers]+rows]
         data.insert(0,[SingleLine(heading,width-4,font_size=8)]+['']*(len(headers)-1))
-        table = Table(data, colWidths=widths, repeatRows=2, hAlign='LEFT', splitInRow=0)
+        table = table_type(data, colWidths=widths, repeatRows=2, hAlign='LEFT', splitInRow=0)
         table.setStyle(TableStyle([
             ('SPAN',(0,0),(-1,0)),
             ('GRID', (0, 0), (-1, -1), .3, colors.grey),
@@ -110,10 +284,24 @@ def write_specification(report, output):
             ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
         ]))
         story.extend([table, Spacer(1, 5*mm)])
-    doc = SimpleDocTemplate(str(output), pagesize=size, leftMargin=left, rightMargin=size[0]-right,
+    buffer = BytesIO() if framed else str(output)
+    doc = SimpleDocTemplate(buffer, pagesize=size, leftMargin=left, rightMargin=size[0]-right,
                            bottomMargin=bottom, topMargin=size[1]-top, allowSplitting=1)
     doc.build(story)
-    return len(PdfReader(output).pages)
+    if not framed:
+        return len(PdfReader(output).pages)
+
+    writer = PdfWriter()
+    for number, source_page in enumerate(PdfReader(buffer).pages, 1):
+        page = writer.add_page(source_page)
+        extents = page_extents.get(number)
+        if extents:
+            lower = min(y for y, _ in extents)
+            upper = max(y for _, y in extents)
+            page.add_transformation(Transformation().translate(ty=(bottom+top-lower-upper)/2))
+    with Path(output).open('wb') as stream:
+        writer.write(stream)
+    return len(writer.pages)
 
 
 def insert_specification(report, output, plan):
@@ -130,3 +318,18 @@ def insert_specification(report, output, plan):
     plan['cartus_contexts'] = contexts
     plan['module_page_ranges'] = {key: [start+(count if start>1 else 0), end+(count if end>1 else 0)] for key, (start, end) in plan.get('module_page_ranges', {}).items()}
     return count
+
+
+def processing_report(report, plan):
+    locations={}
+    for i,context in plan.get('cartus_contexts',{}).items():
+        if context.get('placa'):
+            locations[str(context['placa'])]=(int(i),context.get('corp'))
+    labels={p.get('uid'):p.get('label') for p in report['panels'] if p.get('uid') is not None}
+    rows=report.get('_paic06_rows',[])
+    for row in rows:
+        label=labels.get(row['uid'])
+        page,module=locations.get(str(label),(None,None))
+        row.update(plate=label,page=page,module=module)
+    return {'model':report.get('model'),'panels':len(report['panels']),'rows':rows,
+            'changed_rows':len({r['row'] for r in rows if r['before']!=r['after']})}

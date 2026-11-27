@@ -193,7 +193,7 @@ def display_steps(report,module):
             if k is not None:within[k]=op
     return result
 
-def draw_scene(c,parts,new_id,offset,frame,all_parts,hardware=None,mark_hardware=False,hide_hidden=False,color_hardware=False,label_all=False):
+def draw_scene(c,parts,new_id,offset,frame,all_parts,hardware=None,mark_hardware=False,hide_hidden=False,color_hardware=False,label_all=False,*,precise_edges=False):
     new_ids=set(new_id if isinstance(new_id,list) else [new_id])
     x,y,w,h=frame
     extrema=[]
@@ -216,11 +216,17 @@ def draw_scene(c,parts,new_id,offset,frame,all_parts,hardware=None,mark_hardware
         return x+w/2+(a-(xmin+xmax)/2)*scale,y+h/2+(b-(ymin+ymax)/2)*scale
     mask=None
     if hide_hidden:
-        from visibility import DepthMask,board_faces
-        mask=DepthMask(frame,pt,scale)
+        from visibility import DepthMask,VectorDepthMask,board_faces
+        mask=VectorDepthMask(pt) if precise_edges else DepthMask(frame,pt,scale)
         for p in parts:
             d=offset if p['id'] in new_ids else [0,0,0]
-            for face in board_faces(p,d):mask.polygon(face)
+            if precise_edges:
+                from model_views import opaque_faces
+                def moved(loop):return [[v[i]+d[i] for i in range(3)] for v in loop]
+                for face,holes in opaque_faces(p):
+                    mask.polygon(moved(face),[moved(hole) for hole in holes])
+            else:
+                for face in board_faces(p,d):mask.polygon(face)
     for p in sorted(parts+(hardware or []),key=lambda p:center(p)[2]):
         fresh=p['id'] in new_ids or (p.get('kind')=='hardware' and p.get('host_panel_id') in new_ids);d=offset if fresh else [0,0,0]
         fitting=p.get('kind')=='hardware'
