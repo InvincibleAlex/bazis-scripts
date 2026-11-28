@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {FileBlob,SpreadsheetFile,Workbook} from '@oai/artifact-tool';
+import {SpreadsheetFile,Workbook} from '@oai/artifact-tool';
 import {groupedPlateRows,isDirectExecution} from './group_rows.mjs';
 const [reportPath,outputPath,python]=process.argv.slice(2);
 // CUBIS_TEMPLATE permite testarea pe o copie a sablonului.
@@ -13,11 +13,6 @@ const MAX_ROWS=999,MAX_PAL=10,MAX_ABS=10;
 function requireValue(ok,message){if(!ok)throw Error(message);}
 // Legacy helper name retained; all supported sheet-material families share it.
 export function uniqueCatalogLabels(values){return [...new Set(values.filter(v=>typeof v==='string'&&v))];}
-export function catalogLabels(sheet){
- // Catalog size changes as materials are added; never truncate at a fixed row.
- const used=sheet.getUsedRange(true);
- return used?uniqueCatalogLabels(used.values.slice(1).map(row=>row[0])):[];
-}
 export function isPalPanel(p){return /\b(?:pal|blat|hdf|mdf|hpl|corian)\b/i.test(String(p.material||'').split('\r')[0]);}
 export function transformPanel(p){
  const name=p.diagnostic_material?.desemnare_piesa;
@@ -60,9 +55,13 @@ export function drawingName(report){
 async function main(){
  const report=JSON.parse(await fs.readFile(reportPath,'utf8'));
  requireValue(report.numar_placi>0,'Modelul nu contine placi');
- const templateBook=await SpreadsheetFile.importXlsx(await FileBlob.load(template));
- const pal=catalogLabels(templateBook.worksheets.getItem('PAL'));
- const abs=catalogLabels(templateBook.worksheets.getItem('ABS'));
+ // Only catalog values are needed here. Importing the native template would
+ // evaluate thousands of volatile CELL/INDIRECT search-helper formulas.
+ const catalogRead=spawnSync(python,[path.join(path.dirname(fileURLToPath(import.meta.url)),'read_catalog.py'),template],
+  {encoding:'utf8',windowsHide:true,maxBuffer:32*1024*1024});
+ requireValue(catalogRead.status===0,catalogRead.stderr||'Citirea catalogului Cubis a esuat');
+ const catalogs=JSON.parse(catalogRead.stdout);
+ const pal=uniqueCatalogLabels(catalogs.PAL),abs=uniqueCatalogLabels(catalogs.ABS);
  const rows=groupedPlateRows(report.placi.filter(isPalPanel),transformPanel);
  for(const row of rows){
   requireValue(pal.filter(v=>v===row[1]).length===1,`Material lipsa in catalogul Cubis: ${row[1]}`);
