@@ -13,6 +13,11 @@ const MAX_ROWS=999,MAX_PAL=10,MAX_ABS=10;
 function requireValue(ok,message){if(!ok)throw Error(message);}
 // Legacy helper name retained; all supported sheet-material families share it.
 export function uniqueCatalogLabels(values){return [...new Set(values.filter(v=>typeof v==='string'&&v))];}
+export function catalogLabels(sheet){
+ // Catalog size changes as materials are added; never truncate at a fixed row.
+ const used=sheet.getUsedRange(true);
+ return used?uniqueCatalogLabels(used.values.slice(1).map(row=>row[0])):[];
+}
 export function isPalPanel(p){return /\b(?:pal|blat|hdf|mdf|hpl|corian)\b/i.test(String(p.material||'').split('\r')[0]);}
 export function transformPanel(p){
  const name=p.diagnostic_material?.desemnare_piesa;
@@ -56,8 +61,8 @@ async function main(){
  const report=JSON.parse(await fs.readFile(reportPath,'utf8'));
  requireValue(report.numar_placi>0,'Modelul nu contine placi');
  const templateBook=await SpreadsheetFile.importXlsx(await FileBlob.load(template));
- function catalog(sheet){return uniqueCatalogLabels(templateBook.worksheets.getItem(sheet).getRange('A2:A'+(sheet==='PAL'?2000:3000)).values.flat());}
- const pal=catalog('PAL'),abs=catalog('ABS');
+ const pal=catalogLabels(templateBook.worksheets.getItem('PAL'));
+ const abs=catalogLabels(templateBook.worksheets.getItem('ABS'));
  const rows=groupedPlateRows(report.placi.filter(isPalPanel),transformPanel);
  for(const row of rows){
   requireValue(pal.filter(v=>v===row[1]).length===1,`Material lipsa in catalogul Cubis: ${row[1]}`);
